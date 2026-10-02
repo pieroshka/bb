@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "patches": [
+    {
+      "id": "host-machine-environment",
+      "upstreamBase": "8a9f2816d4046bee5e488dbf88e36a69db271d31",
+      "commit": "578a1eccb08e6ebc0709f221825344fc19faa5ba",
+      "contract": "docs/host-machine-environment.md"
+    }
+  ]
+}

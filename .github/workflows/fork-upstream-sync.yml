@@ -1,0 +1,99 @@
+name: Fork upstream sync
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      verify_current:
+        description: Verify the current fork even when upstream has no new commits
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-main
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'pieroshka/bb'
+    runs-on: ubuntu-24.04
+    outputs:
+      changed: ${{ steps.prepare.outputs.changed }}
+      base: ${{ steps.prepare.outputs.base }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Configure merge identity
+        run: |
+          git config user.name 'BB upstream sync'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config rerere.enabled true
+      - name: Prepare an upstream merge
+        id: prepare
+        run: node .fork/upstream-sync.mjs prepare "$RUNNER_TEMP/fork-candidate"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: steps.prepare.outputs.changed == 'true'
+        with:
+          name: fork-candidate
+          path: ${{ runner.temp }}/fork-candidate
+          retention-days: 7
+
+  verify:
+    needs: prepare
+    if: needs.prepare.outputs.changed == 'true' || inputs.verify_current == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.prepare.outputs.base }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        if: needs.prepare.outputs.changed == 'true'
+        with:
+          name: fork-candidate
+          path: ${{ runner.temp }}/fork-candidate
+      - name: Check out the candidate
+        if: needs.prepare.outputs.changed == 'true'
+        env:
+          CANDIDATE_DIRECTORY: ${{ runner.temp }}/fork-candidate
+        run: |
+          git bundle verify "$CANDIDATE_DIRECTORY/candidate.bundle"
+          candidate_branch=$(node -p 'JSON.parse(require("node:fs").readFileSync(process.env.CANDIDATE_DIRECTORY + "/state.json", "utf8")).branch')
+          git fetch "$CANDIDATE_DIRECTORY/candidate.bundle" "$candidate_branch"
+          git checkout --detach FETCH_HEAD
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+      - name: Build and verify the fork
+        run: bash .fork/verify.sh
+
+  promote:
+    needs: [prepare, verify]
+    if: needs.prepare.outputs.changed == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.prepare.outputs.base }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: fork-candidate
+          path: ${{ runner.temp }}/fork-candidate
+      - name: Promote the exact tested merge without rewriting main
+        run: node .fork/upstream-sync.mjs promote "$RUNNER_TEMP/fork-candidate"

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "upstream": "https://github.com/get-bb/bb.git",
+  "branch": "main",
+  "repository": "pieroshka/bb",
+  "requiredFiles": [
+    "apps/server/src/routes/host-machine-environment.ts",
+    "apps/server/src/services/machines/host-machine-environment-store.ts",
+    "apps/server/test/public/host-machine-environment.test.ts",
+    "packages/sdk/src/areas/host-machine-environment.ts",
+    "packages/server-contract/src/api/host-machine-environment.ts"
+  ]
+}
