@@ -3,6 +3,20 @@ import type { MachineEnvironmentList } from "@bb/server-contract";
 import { action } from "../action.js";
 import { createCliBbSdk } from "../client.js";
 import { outputJson } from "./helpers.js";
+import { resolveMachineHostId } from "./machine.js";
+
+type ScopeOptions = { project?: string; machine?: string; json?: boolean };
+
+async function machineScope(
+  options: ScopeOptions,
+  serverUrl: string,
+): Promise<string | null> {
+  if (options.project && options.machine)
+    throw new Error("Choose either --machine or --project.");
+  return options.machine
+    ? resolveMachineHostId({ serverUrl, target: options.machine })
+    : null;
+}
 
 function printEnvironment(
   result: MachineEnvironmentList,
@@ -43,33 +57,43 @@ export function registerMachineEnvironmentCommands(
 ): void {
   const env = machine
     .command("env")
-    .description("Configure global or project machine environment variables");
+    .description(
+      "Configure global, per-machine, or project environment variables",
+    );
   env
     .command("list")
+    .option(
+      "--machine <id-or-name>",
+      "Show this machine's overrides and inherited global variables",
+    )
     .option(
       "--project <id>",
       "Show this project's overrides and inherited global variables",
     )
     .option("--json", "Print machine-readable JSON output")
     .action(
-      action(async (options: { project?: string; json?: boolean }) => {
+      action(async (options: ScopeOptions) => {
         const sdk = createCliBbSdk(getUrl());
-        const result = options.project
-          ? await sdk.projects.machineEnvironment({
-              projectId: options.project,
-            })
-          : {
-              ...(await sdk.system.machineEnvironment()),
-              inheritedVariables: [],
-            };
+        const hostId = await machineScope(options, getUrl());
+        const result =
+          hostId !== null
+            ? await sdk.hosts.experimental_machineEnvironment({ hostId })
+            : options.project
+              ? await sdk.projects.machineEnvironment({
+                  projectId: options.project,
+                })
+              : {
+                  ...(await sdk.system.machineEnvironment()),
+                  inheritedVariables: [],
+                };
         printEnvironment(result, options);
-        if (!options.json && options.project) {
+        if (!options.json && (options.project || hostId !== null)) {
           for (const row of result.inheritedVariables) {
             const overridden = result.variables.some(
               (variable) => variable.name === row.name,
             );
             console.log(
-              `${row.name}=[secret] (Global${overridden ? "; overridden by project" : "; inherited"})`,
+              `${row.name}=[secret] (Global${overridden ? `; overridden by ${hostId === null ? "project" : "machine"}` : "; inherited"})`,
             );
           }
         }
@@ -78,28 +102,32 @@ export function registerMachineEnvironmentCommands(
   env
     .command("set <NAME>")
     .description("Read a value from stdin; remove one trailing newline")
+    .option("--machine <id-or-name>", "Set an override for this machine")
     .option("--project <id>", "Set an override for this project")
     .option("--note <text>", "Describe this variable")
     .option("--json", "Print machine-readable JSON output")
     .action(
       action(
-        async (
-          name: string,
-          options: { project?: string; note?: string; json?: boolean },
-        ) => {
+        async (name: string, options: ScopeOptions & { note?: string }) => {
           const sdk = createCliBbSdk(getUrl());
+          const hostId = await machineScope(options, getUrl());
           const input = {
             name,
             value: await readValue(),
             note: options.note ?? null,
           };
           printEnvironment(
-            options.project
-              ? await sdk.projects.setMachineEnvironmentVariable({
+            hostId !== null
+              ? await sdk.hosts.experimental_setMachineEnvironmentVariable({
                   ...input,
-                  projectId: options.project,
+                  hostId,
                 })
-              : await sdk.system.setMachineEnvironmentVariable(input),
+              : options.project
+                ? await sdk.projects.setMachineEnvironmentVariable({
+                    ...input,
+                    projectId: options.project,
+                  })
+                : await sdk.system.setMachineEnvironmentVariable(input),
             options,
           );
         },
@@ -108,24 +136,32 @@ export function registerMachineEnvironmentCommands(
   env
     .command("unset <NAME>")
     .option(
+      "--machine <id-or-name>",
+      "Remove this machine's override and restore inheritance",
+    )
+    .option(
       "--project <id>",
       "Remove this project's override and restore inheritance",
     )
     .option("--json", "Print machine-readable JSON output")
     .action(
-      action(
-        async (name: string, options: { project?: string; json?: boolean }) => {
-          const sdk = createCliBbSdk(getUrl());
-          printEnvironment(
-            options.project
+      action(async (name: string, options: ScopeOptions) => {
+        const sdk = createCliBbSdk(getUrl());
+        const hostId = await machineScope(options, getUrl());
+        printEnvironment(
+          hostId !== null
+            ? await sdk.hosts.experimental_deleteMachineEnvironmentVariable({
+                hostId,
+                name,
+              })
+            : options.project
               ? await sdk.projects.deleteMachineEnvironmentVariable({
                   projectId: options.project,
                   name,
                 })
               : await sdk.system.deleteMachineEnvironmentVariable({ name }),
-            options,
-          );
-        },
-      ),
+          options,
+        );
+      }),
     );
 }

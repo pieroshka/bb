@@ -352,7 +352,7 @@ move and downloads the new server's bb-app package for its service.
 Machine lists and name/ID selectors include machines still being created. Machine creation is durable: `create --no-wait` returns the creating host ID. `machine show <host-id>` reads progress and `machine remove <host-id>` cancels it. SIGINT only stops following.
 
 Machine environment: `bb machine env list`, `bb machine env set NAME`
-(value from stdin), and `bb machine env unset NAME`; all accept `--project <id>` for project overrides and `--json`. Omit `--project` for global settings.
+(value from stdin), and `bb machine env unset NAME`; all accept `--machine <id-or-name>` for machine overrides, `--project <id>` for project overrides, and `--json`. Choose one selector or omit both for global defaults. Offline machines are supported.
 
 Standalone `bb machine create` machines remain until explicitly removed.
 

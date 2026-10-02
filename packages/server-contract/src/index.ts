@@ -22,3 +22,4 @@ export type {
 } from "@bb/domain";
 
 export * from "./api/machine-environment.js";
+export * from "./api/host-machine-environment.js";

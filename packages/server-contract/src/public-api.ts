@@ -1,3 +1,4 @@
+import { hostMachineEnvironmentRoutes } from "./api/host-machine-environment.js";
 import {
   machineEnvironmentSetSchema,
   machineEnvironmentDeleteSchema,
@@ -831,6 +832,7 @@ export const publicApiRoutes = {
   },
 
   hosts: {
+    ...hostMachineEnvironmentRoutes,
     create: defineRoute({
       path: "/hosts",
       method: "post",

@@ -23,6 +23,10 @@ import type {
   SystemMachineProvider,
 } from "@bb/server-contract";
 import { signalRequestArgs, type CreateSdkAreaArgs } from "./common.js";
+import {
+  createHostMachineEnvironmentArea,
+  type HostMachineEnvironmentArea,
+} from "./host-machine-environment.js";
 
 export interface HostGetArgs {
   hostId: string;
@@ -108,7 +112,7 @@ export type HostActionResult = HostActionResponse;
 export type HostUpdateResult = Host;
 export type MachineProviderListResult = SystemMachineProvider[];
 
-export interface HostsArea {
+export interface HostsArea extends HostMachineEnvironmentArea {
   experimental_create(args: MachineCreateArgs): Promise<Host>;
   experimental_getEnrollmentCommand(
     args: HostGetArgs,
@@ -146,6 +150,7 @@ export interface HostsArea {
 export function createHostsArea(args: CreateSdkAreaArgs): HostsArea {
   const { transport } = args;
   return {
+    ...createHostMachineEnvironmentArea(args),
     async experimental_create(input) {
       let host = await transport.readJson(
         transport.api.v1.hosts.$post(

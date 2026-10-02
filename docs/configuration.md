@@ -1,5 +1,8 @@
 # Configuration
 
+This fork also supports [per-machine environment overrides](host-machine-environment.md)
+through `bb machine env --machine <id-or-name>` and the Machine Environment plugin.
+
 Launcher status output is plain when stdout is redirected, including in CI.
 Set `FORCE_COLOR=1` to request color or `NO_COLOR=1` to disable it; `NO_COLOR`
 takes precedence. In-place progress updates require a stdout TTY.

@@ -1,5 +1,8 @@
 # APIs To Audit
 
+The fork's four experimental per-machine environment SDK methods and their
+stabilization criteria are documented in [Per-machine environment extension](host-machine-environment.md).
+
 ## Composer popups
 
 `ComposerCustomization.experimental_popups` registers an array of

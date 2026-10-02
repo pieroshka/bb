@@ -276,6 +276,10 @@ type ExpectedFilesKey =
 type ExpectedGuideKey = "render";
 
 type ExpectedHostsKey =
+  | "experimental_machineEnvironment"
+  | "experimental_replaceMachineEnvironment"
+  | "experimental_setMachineEnvironmentVariable"
+  | "experimental_deleteMachineEnvironmentVariable"
   | "cloneDefaultPath"
   | "experimental_create"
   | "experimental_getEnrollmentCommand"

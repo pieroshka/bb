@@ -131,8 +131,11 @@ all server requests. Do not print these headers; they can contain access tokens.
 
 ## Machine environment
 
-Use `--project <id>` on `bb machine env list|set|unset` for project overrides;
-omit it for global settings. Project overrides follow the project across
+Use `--machine <id-or-name>` on `bb machine env list|set|unset` for per-machine
+overrides, or `--project <id>` for project overrides. Omit both for global
+defaults. The selectors are mutually exclusive; offline machines are supported.
+Precedence is global defaults, machine overrides, project overrides, then
+provider contributions. The Machine Environment plugin adds a machine editor. Project overrides follow the project across
 machines and worktrees, including the primary host. Empty strings override;
 unset restores inheritance. List masks all values and includes inherited global
 rows for project scope. Set and unset update a single variable atomically.
@@ -142,7 +145,7 @@ selector under its header. Project settings → Advanced settings opens the same
 project. Changes apply
 to the next agent turn and new terminals/commands. Project values are passed per
 operation and never installed into the daemon's global environment. They override
-global values; provider contributions retain precedence. All scopes share an
+global and machine values; provider contributions retain precedence. All scopes share an
 encrypted database table and the existing machine-environment encryption key.
 
 Repository setup receives freshly resolved machine variables on each dispatch,
