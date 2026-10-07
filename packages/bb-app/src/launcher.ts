@@ -4160,6 +4160,17 @@ export async function runBbApp(
         });
         return {
           prepareDaemon: async () => {
+            while (existsSync(join(context.dataDir, ".fork-maintenance"))) {
+              if (isShutdownRequested())
+                throw new Error(
+                  "Fork activation was cancelled before daemon startup",
+                );
+              await delayMilliseconds({ ms: 250 });
+            }
+            if (isShutdownRequested())
+              throw new Error(
+                "Fork activation was cancelled before daemon startup",
+              );
             const autoJoinEnv = await maybeAddAutoJoinEnv({
               dataDir: context.dataDir,
               env: sharedEnv,

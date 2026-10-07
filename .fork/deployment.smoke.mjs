@@ -21,7 +21,7 @@ const runtime = {
   id: "verified-0.45",
   command: process.execPath,
   cwd: repo,
-  args: [join(repo, "packages/bb-app/dist/bb-server.js")],
+  args: [join(repo, "packages/bb-app/dist/bb-app.js"), "start"],
   env: {
     HOME: join(root, "home"),
     NODE_ENV: "production",

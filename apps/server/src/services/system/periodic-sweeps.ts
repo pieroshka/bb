@@ -1,3 +1,4 @@
+import { isForkMaintenanceHeld } from "../fork-maintenance.js";
 import {
   runThreadPruningSweep,
   THREAD_PRUNING_SWEEP_LIMITS,
@@ -626,6 +627,7 @@ const PERIODIC_SWEEP_JOBS: PeriodicSweepJob[] = [
 export async function runStartupRecoverySweep(
   deps: LoggedPendingInteractionWorkSessionDeps,
 ): Promise<void> {
+  if (isForkMaintenanceHeld(deps.config.dataDir)) return;
   await deliverLegacyDeferredThreadMessages(deps);
   await runEnvironmentProvisioningSweep(deps);
   await runThreadLifecycleSweep(deps);
@@ -634,6 +636,7 @@ export async function runStartupRecoverySweep(
 export async function runPeriodicSweeps(
   deps: PeriodicSweepDeps,
 ): Promise<void> {
+  if (isForkMaintenanceHeld(deps.config.dataDir)) return;
   const now = Date.now();
   await runPeriodicSweepJobs(deps, PERIODIC_SWEEP_JOBS, now);
 }

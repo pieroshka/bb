@@ -18,7 +18,7 @@ harness. Core and all four native provider adapters are built and typechecked by
 `.fork/verify.sh`; their transport integration requires separate behavioral tests.
 
 `node .fork/deployment.smoke.mjs` runs an actual BB server in a disposable directory.
-It injects a failed candidate that modifies SQLite then exits, verifies rollback
+The probe uses the full server-plus-daemon launcher. It injects a failed candidate that modifies SQLite then exits, verifies rollback
 restores SQLite, verifies quarantine prevents repeated deployment, activates a
 healthy candidate, then verifies same-version crash recovery preserves writes
 accepted after activation. The CI container runs this with networking disabled.
@@ -27,7 +27,8 @@ accepted after activation. The CI container runs this with networking disabled.
 
 During probation the private `.fork-maintenance` marker in the selected BB data
 directory blocks public HTTP and WebSocket admission, queue dispatch and plugin
-background-service execution. Only `/health` stays available. It is not a user
+background-service execution and core recovery/maintenance sweeps. The launcher
+defers its local daemon until admission opens. Only `/health` stays available. It is not a user
 configuration switch; the external operator owns it.
 
 Updates defer while any thread is starting, active or stopping, or any terminal is

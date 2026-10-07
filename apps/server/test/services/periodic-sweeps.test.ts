@@ -1,3 +1,5 @@
+import { writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import {
   CLOSED_SESSION_ROW_RETENTION_MS,
@@ -24,6 +26,7 @@ import {
   type PeriodicSweepJob,
   runPeriodicSweepJobs,
   runPeriodicSweeps,
+  runStartupRecoverySweep,
 } from "../../src/services/system/periodic-sweeps.js";
 import {
   THREAD_PRUNING_SWEEP_LIMITS,
@@ -106,6 +109,34 @@ const UNTIMED_SWEEP_LIMITS: ThreadPruningSweepLimits = {
 };
 
 describe("runPeriodicSweeps", () => {
+  it("keeps soft-deleted thread rows intact while startup probation holds admission", async () => {
+    await withTestHarness(async (harness) => {
+      const { thread } = seedThreadFixture(harness);
+      harness.db
+        .update(threads)
+        .set({
+          deletedAt: Date.now() - 86_400_000,
+          storageDeletedAt: Date.now() - 86_400_000,
+        })
+        .where(eq(threads.id, thread.id))
+        .run();
+      const marker = join(harness.config.dataDir, ".fork-maintenance");
+      writeFileSync(marker, "Probation\n");
+      try {
+        await runStartupRecoverySweep(harness.deps);
+        expect(
+          harness.db
+            .select({ id: threads.id })
+            .from(threads)
+            .where(eq(threads.id, thread.id))
+            .get()?.id,
+        ).toBe(thread.id);
+      } finally {
+        rmSync(marker);
+      }
+    });
+  });
+
   it("deletes expired retained outputs across yielded advances without changing previews", async () => {
     const now = Date.now();
     await withTestHarness(async (harness) => {
