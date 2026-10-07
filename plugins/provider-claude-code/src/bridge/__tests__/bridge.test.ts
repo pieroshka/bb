@@ -20,6 +20,7 @@ import {
   BRIDGE_JSON_RPC_ERRORS,
   type JsonValue,
   type RuntimePermissionPolicy,
+  type RuntimePermissionScope,
 } from "@get-bb/plugin-sdk/provider-bridge";
 
 const { forkSessionMock, queryMock } = vi.hoisted(() => ({
@@ -149,6 +150,8 @@ type ControlledClaudeQueryResult =
   | ControlledClaudeQueryErrorResult;
 
 const tempDirs: string[] = [];
+const CLAUDE_EXECUTABLE_NAME =
+  process.platform === "win32" ? "claude.exe" : "claude";
 
 interface StartBridgeThreadArgs {
   bridge: BridgeJsonRpcTestHarness;
@@ -480,7 +483,7 @@ function createAssistantToolUseMessage(
 function createTempClaudeExecutable(): TempClaudeExecutable {
   const binDir = mkdtempSync(join(tmpdir(), "bb-claude-path-"));
   tempDirs.push(binDir);
-  const executablePath = join(binDir, "claude");
+  const executablePath = join(binDir, CLAUDE_EXECUTABLE_NAME);
   writeFileSync(executablePath, "#!/bin/sh\nexit 0\n");
   chmodSync(executablePath, 0o755);
   return { binDir, executablePath };
@@ -1175,6 +1178,38 @@ describe("bridge", () => {
     });
   });
 
+  it("allows bypass mode only for full access sessions, including ones starting in plan mode", () => {
+    const sessionOptions = (
+      permissionMode: ClaudePermissionMode,
+      permissionScope: RuntimePermissionScope,
+    ) =>
+      buildSessionOptions(
+        {
+          chromeEnabled: false,
+          disable1MContext: false,
+          sandboxEnabled: true,
+          workflowsEnabled: false,
+          cwd: "/tmp/worktree",
+          instructionMode: "append",
+          permissionMode,
+          permissionScope,
+          serviceTier: "default",
+        },
+        {},
+      );
+
+    expect(sessionOptions("plan", "full").allowBypassPermissions).toBe(true);
+    expect(
+      sessionOptions("bypassPermissions", "full").allowBypassPermissions,
+    ).toBe(true);
+    expect(sessionOptions("plan", "workspace").allowBypassPermissions).toBe(
+      false,
+    );
+    expect(
+      sessionOptions("acceptEdits", "workspace").allowBypassPermissions,
+    ).toBe(false);
+  });
+
   it("uses a Claude executable discovered from PATH for SDK sessions", () => {
     const { binDir, executablePath } = createTempClaudeExecutable();
     const options = buildSessionOptions(
@@ -1201,7 +1236,7 @@ describe("bridge", () => {
     tempDirs.push(homeDir);
     const localBinDir = join(homeDir, ".local", "bin");
     mkdirSync(localBinDir, { recursive: true });
-    const executablePath = join(localBinDir, "claude");
+    const executablePath = join(localBinDir, CLAUDE_EXECUTABLE_NAME);
     writeFileSync(executablePath, "#!/bin/sh\nexit 0\n");
     chmodSync(executablePath, 0o755);
 
@@ -1218,7 +1253,7 @@ describe("bridge", () => {
         permissionMode: "default",
         permissionScope: "workspace",
       },
-      { HOME: homeDir, PATH: "/nonexistent-bb-test-dir" },
+      { HOME: homeDir, USERPROFILE: homeDir, PATH: "/nonexistent-bb-test-dir" },
     );
 
     expect(options.pathToClaudeCodeExecutable).toBe(executablePath);
@@ -1663,6 +1698,276 @@ describe("bridge", () => {
     }
   });
 
+  it("approves only Claude Code's suggested rule when a Bash command is allowed for the session", async () => {
+    const bridge = createBridgeJsonRpcTestHarness(handleLine);
+    const queries: ControlledClaudeQuery[] = [];
+    queryMock.mockImplementation(() => {
+      const query = createControlledClaudeQuery();
+      queries.push(query);
+      return query;
+    });
+
+    try {
+      const threadId = "thread-bash-session-rule";
+      await startBridgeThread({ bridge, threadId });
+
+      const npmPromise = getLastCanUseTool()(
+        "Bash",
+        { command: "npm --version" },
+        {
+          blockedPath: "/tmp/outside",
+          decisionReason: "This command requires approval",
+          requestId: "control-request-npm",
+          signal: new AbortController().signal,
+          suggestions: [
+            {
+              type: "addRules",
+              rules: [{ toolName: "Bash", ruleContent: "npm --version" }],
+              behavior: "allow",
+              destination: "localSettings",
+            },
+          ],
+          toolUseID: "tool-npm",
+        },
+      );
+      await bridge.flushWork();
+      const npmRequest = bridge.messages.find((message) =>
+        isApprovalInteraction(message),
+      );
+      if (npmRequest?.id === undefined) {
+        throw new Error("Expected forwarded npm permission request");
+      }
+      expect(npmRequest.params).toMatchObject({
+        payload: {
+          availableDecisions: ["allow_once", "allow_for_session", "deny"],
+          subject: {
+            kind: "command",
+            sessionGrant: {
+              network: null,
+              fileSystem: { read: ["/tmp/outside"], write: ["/tmp/outside"] },
+            },
+          },
+        },
+      });
+      handleLine(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: npmRequest.id,
+          result: {
+            decision: "allow_for_session",
+            grantedPermissions: {
+              network: null,
+              fileSystem: { read: ["/tmp/outside"], write: ["/tmp/outside"] },
+            },
+          },
+        }),
+      );
+      await expect(npmPromise).resolves.toMatchObject({
+        behavior: "allow",
+        updatedPermissions: [
+          {
+            type: "addDirectories",
+            directories: ["/tmp/outside"],
+            destination: "session",
+          },
+          {
+            type: "addRules",
+            rules: [{ toolName: "Bash", ruleContent: "npm --version" }],
+            behavior: "allow",
+            destination: "session",
+          },
+        ],
+      });
+
+      const pythonPromise = getLastCanUseTool()(
+        "Bash",
+        { command: "python3 -c 'print(42)'" },
+        {
+          blockedPath: "/tmp/outside",
+          decisionReason: "This command requires approval",
+          requestId: "control-request-python",
+          signal: new AbortController().signal,
+          suggestions: [
+            {
+              type: "addRules",
+              rules: [
+                { toolName: "Bash", ruleContent: "python3 -c 'print(42)'" },
+              ],
+              behavior: "allow",
+              destination: "localSettings",
+            },
+          ],
+          toolUseID: "tool-python",
+        },
+      );
+      await bridge.flushWork();
+      const pythonRequest = bridge.messages.find(
+        (message) =>
+          isApprovalInteraction(message) && message.id !== npmRequest.id,
+      );
+      if (pythonRequest?.id === undefined) {
+        throw new Error("Expected forwarded python permission request");
+      }
+      handleLine(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: pythonRequest.id,
+          result: { decision: "deny", grantedPermissions: null },
+        }),
+      );
+      await expect(pythonPromise).resolves.toMatchObject({
+        behavior: "deny",
+        toolUseID: "tool-python",
+      });
+
+      await stopBridgeThread({ bridge, queries, threadId });
+    } finally {
+      bridge.restore();
+    }
+  });
+
+  it("forwards a permissions.ask rule prompt that carries no permission hints", async () => {
+    const bridge = createBridgeJsonRpcTestHarness(handleLine);
+    const queries: ControlledClaudeQuery[] = [];
+    queryMock.mockImplementation(() => {
+      const query = createControlledClaudeQuery();
+      queries.push(query);
+      return query;
+    });
+
+    try {
+      const threadId = "thread-ask-rule";
+      const toolUseID = "tool-ask-rule";
+      await startBridgeThread({ bridge, threadId });
+
+      const resultPromise = getLastCanUseTool()(
+        "Bash",
+        { command: "git push origin main" },
+        {
+          description: "Push the branch to origin",
+          requestId: "control-request",
+          signal: new AbortController().signal,
+          toolUseID,
+        },
+      );
+      await bridge.flushWork();
+
+      const permissionRequest = bridge.messages.find((message) =>
+        isApprovalInteraction(message),
+      );
+      if (permissionRequest?.id === undefined) {
+        throw new Error("Expected forwarded permission request");
+      }
+      expect(permissionRequest.params).toMatchObject({
+        threadId,
+        payload: {
+          kind: "approval",
+          availableDecisions: ["allow_once", "deny"],
+          subject: expect.objectContaining({ itemId: toolUseID }),
+        },
+      });
+
+      handleLine(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: permissionRequest.id,
+          result: { decision: "allow_once", grantedPermissions: null },
+        }),
+      );
+      await expect(resultPromise).resolves.toMatchObject({
+        behavior: "allow",
+        toolUseID,
+      });
+
+      await stopBridgeThread({ bridge, queries, threadId });
+    } finally {
+      bridge.restore();
+    }
+  });
+
+  it("does not let a session grant for a folder cover a later request that names no folder", async () => {
+    const bridge = createBridgeJsonRpcTestHarness(handleLine);
+    const queries: ControlledClaudeQuery[] = [];
+    queryMock.mockImplementation(() => {
+      const query = createControlledClaudeQuery();
+      queries.push(query);
+      return query;
+    });
+
+    try {
+      const threadId = "thread-grant-then-escalation";
+      await startBridgeThread({ bridge, threadId });
+
+      const pathGrantPromise = getLastCanUseTool()(
+        "Read",
+        { file_path: "/tmp/outside/notes.txt" },
+        {
+          blockedPath: "/tmp/outside",
+          requestId: "control-request-path",
+          signal: new AbortController().signal,
+          toolUseID: "tool-path-grant",
+        },
+      );
+      await bridge.flushWork();
+      const pathRequest = bridge.messages.find((message) =>
+        isApprovalInteraction(message),
+      );
+      if (pathRequest?.id === undefined) {
+        throw new Error("Expected forwarded path permission request");
+      }
+      handleLine(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: pathRequest.id,
+          result: {
+            decision: "allow_for_session",
+            grantedPermissions: {
+              network: null,
+              fileSystem: { read: ["/tmp/outside"], write: [] },
+            },
+          },
+        }),
+      );
+      await expect(pathGrantPromise).resolves.toMatchObject({
+        behavior: "allow",
+      });
+
+      const escalationPromise = getLastCanUseTool()(
+        "Read",
+        { file_path: "/tmp/outside/secrets.env" },
+        {
+          decisionReason: "Automatic review requires user escalation",
+          requestId: "control-request-escalation",
+          signal: new AbortController().signal,
+          toolUseID: "tool-escalation",
+        },
+      );
+      await bridge.flushWork();
+      const escalationRequest = bridge.messages.find(
+        (message) =>
+          isApprovalInteraction(message) && message.id !== pathRequest.id,
+      );
+      if (escalationRequest?.id === undefined) {
+        throw new Error("Expected forwarded escalation permission request");
+      }
+      handleLine(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: escalationRequest.id,
+          result: { decision: "deny", grantedPermissions: null },
+        }),
+      );
+      await expect(escalationPromise).resolves.toMatchObject({
+        behavior: "deny",
+        toolUseID: "tool-escalation",
+      });
+
+      await stopBridgeThread({ bridge, queries, threadId });
+    } finally {
+      bridge.restore();
+    }
+  });
+
   it("forwards AskUserQuestion through canUseTool and returns the answer payload", async () => {
     const bridge = createBridgeJsonRpcTestHarness(handleLine);
     const queries: ControlledClaudeQuery[] = [];
@@ -1869,22 +2174,9 @@ describe("bridge", () => {
       await expect(planPromise).resolves.toMatchObject({ behavior: "allow" });
       await bridge.flushWork();
 
-      const editResult = await canUseTool(
-        "Edit",
-        { file_path: "/tmp/worktree/test.md", new_string: "hi" },
-        {
-          requestId: "control-request",
-          signal: new AbortController().signal,
-          toolUseID: "tool-edit",
-          blockedPath: "/tmp/worktree",
-          decisionReason: "Outside the sandbox",
-        },
+      expect(queries[0]?.setPermissionMode).toHaveBeenLastCalledWith(
+        "bypassPermissions",
       );
-
-      expect(editResult).toMatchObject({ behavior: "allow" });
-      expect(
-        bridge.messages.filter((message) => isApprovalInteraction(message)),
-      ).toHaveLength(1);
 
       await stopBridgeThread({ bridge, queries, threadId });
     } finally {

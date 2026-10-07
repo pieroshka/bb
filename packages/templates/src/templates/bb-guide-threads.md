@@ -110,7 +110,7 @@ Forking:
     --environment <id-or-path>     Existing environment ID or unmanaged workspace path
     --new-environment <kind>       Create a fresh personal workspace or managed worktree
     --base-branch <branch>         Exact Git ref for a new worktree; omit for the project default
-    --title <title>                Thread title
+    --title <title>                Thread title (idle forks default to "(1) <source title>")
     --permission-mode <mode>       Inherit source by default; accepts accept-edits, auto, full
     --visibility <visibility>      visible (default) or hidden
     --agent-context-seed <text>    Persist agent-only context without a first run
@@ -129,7 +129,9 @@ Forking:
   source machine; --environment can select another environment or unmanaged
   path on that machine. A different machine is rejected because the source
   provider session lives on its original machine. Omit --prompt to create an
-  idle fork.
+  idle fork. A visible idle fork without --title is named after its source with
+  a numbered prefix: "foo" becomes "(1) foo" and "(1) foo" becomes "(2) foo".
+  Forks created with a first prompt get a title from that prompt.
 
 Editing a sent message:
 

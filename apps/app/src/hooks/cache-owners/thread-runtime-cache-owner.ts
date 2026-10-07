@@ -912,14 +912,16 @@ export function applyCreateThreadResult({
     thread,
     cachedHostId ?? selectedHostId,
   );
-  prependProjectPromptHistory(
-    queryClient,
-    request.projectId,
-    buildAcceptedPromptHistoryEntry({
-      createdAt: thread.createdAt,
-      input: request.input,
-    }),
-  );
+  if (request.input.length > 0) {
+    prependProjectPromptHistory(
+      queryClient,
+      request.projectId,
+      buildAcceptedPromptHistoryEntry({
+        createdAt: thread.createdAt,
+        input: request.input,
+      }),
+    );
+  }
   invalidateProjectPromptHistoryQueries({
     queryClient,
     projectId: request.projectId,

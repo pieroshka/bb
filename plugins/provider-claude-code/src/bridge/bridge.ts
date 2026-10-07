@@ -103,15 +103,17 @@ import {
   type ClaudeInteractiveResponse,
   type ClaudePermissionMode,
   type ClaudePermissionRequestApprovalParams,
+  type ClaudePermissionRule,
   type ClaudeSuggestedPermissionUpdate,
   type ClaudeUserQuestionInput,
   type ClaudeUserQuestionRequestParams,
+  CLAUDE_BASH_TOOL_NAME,
   CLAUDE_EXIT_PLAN_MODE_TOOL_NAME,
   CLAUDE_USER_QUESTION_TOOL_NAME,
   claudeExitPlanModeInputSchema,
   claudeSuggestedPermissionUpdateSchema,
   claudeUserQuestionInputSchema,
-  shouldRequestClaudePermissionApproval,
+  getSuggestedRules,
   toPendingInteractionPermissionProfile,
 } from "../interactive-contract.js";
 
@@ -186,6 +188,7 @@ interface PendingPermissionRequest extends PendingInteractiveRequestBase {
   kind: "permission_request";
   originalInput: Record<string, unknown>;
   permissions: PendingInteractionGrantedPermissionProfile;
+  suggestedRules: ClaudePermissionRule[];
   toolName: string;
 }
 
@@ -317,13 +320,6 @@ interface ReplaceThreadSessionBeforeNextTurnArgs {
 
 interface ClaudeCodeThreadStopResult {
   ok: true;
-}
-
-interface ClaudeCanUseToolDecisionContext {
-  blockedPath: string | undefined;
-  decisionReason: string | undefined;
-  suggestions: ClaudeSuggestedPermissionUpdate[] | undefined;
-  toolName: string;
 }
 
 interface BuildInteractiveRequestParamsArgs {
@@ -628,6 +624,12 @@ function sessionPermissionGrantCovers(
 function hasClaudeSessionPermissionGrant(
   args: ClaudeSessionPermissionCoverageArgs,
 ): boolean {
+  if (
+    args.permissions.network === null &&
+    args.permissions.fileSystem === null
+  ) {
+    return false;
+  }
   return args.grants.some((grant) =>
     sessionPermissionGrantCovers({
       grant,
@@ -1633,6 +1635,7 @@ function buildInteractiveRequestParams(
       blockedPath: args.blockedPath,
       suggestions: args.suggestions,
     }),
+    suggestedRules: getSuggestedRules(args.suggestions),
   };
 }
 
@@ -1660,7 +1663,10 @@ function decodePendingInteractiveResponse(
     return null;
   }
   try {
-    return buildClaudeInteractiveResponse(outcome.data);
+    return buildClaudeInteractiveResponse(
+      outcome.data,
+      pending.kind === "permission_request" ? pending.suggestedRules : [],
+    );
   } catch {
     return null;
   }
@@ -1775,6 +1781,7 @@ function createForwardInteractiveRequest(
         payload,
         originalInput: args.input,
         permissions: params.permissions,
+        suggestedRules: params.suggestedRules,
         resolve: finish,
         toolName: args.toolName,
       });
@@ -1959,16 +1966,13 @@ function createCanUseTool(threadIdRef: ThreadIdRef): CanUseTool {
       options.suggestions,
     );
 
-    const requestContext: ClaudeCanUseToolDecisionContext = {
+    const requestedPermissions = toPendingInteractionPermissionProfile({
       toolName,
       blockedPath: options.blockedPath,
-      decisionReason: options.decisionReason,
       suggestions,
-    };
-    const requestedPermissions =
-      toPendingInteractionPermissionProfile(requestContext);
+    });
     if (
-      toolName === "Bash" &&
+      toolName === CLAUDE_BASH_TOOL_NAME &&
       shouldAutoDenyInteractiveRequest(interactiveRequestPolicy) &&
       typeof input === "object" &&
       input !== null &&
@@ -1993,18 +1997,6 @@ function createCanUseTool(threadIdRef: ThreadIdRef): CanUseTool {
         updatedInput: input,
         toolUseID: options.toolUseID,
         decisionClassification: "user_permanent",
-      };
-    }
-
-    const shouldRequestApproval =
-      shouldRequestClaudePermissionApproval(requestContext) ||
-      (options.suggestions?.length ?? 0) > 0;
-
-    if (!shouldRequestApproval) {
-      return {
-        behavior: "allow",
-        updatedInput: input,
-        toolUseID: options.toolUseID,
       };
     }
 
@@ -2565,6 +2557,7 @@ function handleParsedMessage(parsed: unknown): void {
     }
     if (
       pending.kind === "permission_request" &&
+      pending.toolName !== CLAUDE_BASH_TOOL_NAME &&
       shouldCacheClaudeSessionPermission(interactiveResponse)
     ) {
       threadSession.attachment.sessionPermissionGrants.push({
