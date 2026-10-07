@@ -8,6 +8,8 @@
     "apps/server/src/services/machines/host-machine-environment-store.ts",
     "apps/server/test/public/host-machine-environment.test.ts",
     "packages/sdk/src/areas/host-machine-environment.ts",
-    "packages/server-contract/src/api/host-machine-environment.ts"
-  ]
+    "packages/server-contract/src/api/host-machine-environment.ts",
+    "plugins/provider-claude-code/src/bridge/provider-maintenance.ts"
+  ],
+  "tracking": "stable-release"
 }

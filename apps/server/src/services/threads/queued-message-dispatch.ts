@@ -1,3 +1,4 @@
+import { isForkMaintenanceHeld } from "../fork-maintenance.js";
 import { ensureHostSessionReadyForWork } from "../hosts/host-lifecycle.js";
 import { isMachineWaitingForExecution } from "../machines/lifecycle.js";
 import { isServerMoveFrozen } from "../server-move/freeze-state.js";
@@ -186,7 +187,10 @@ export function requestQueuedMessageDispatch(
   deps: QueueDispatchDeps,
   wake: QueuedMessageDispatchWake,
 ): void {
-  if (isServerMoveFrozen(deps.db)) {
+  if (
+    isServerMoveFrozen(deps.db) ||
+    isForkMaintenanceHeld(deps.config.dataDir)
+  ) {
     return;
   }
   if (
@@ -209,7 +213,10 @@ export async function runQueuedMessageDispatch(
   deps: QueueDispatchDeps,
   wake: QueuedMessageDispatchWake,
 ): Promise<void> {
-  if (isServerMoveFrozen(deps.db)) {
+  if (
+    isServerMoveFrozen(deps.db) ||
+    isForkMaintenanceHeld(deps.config.dataDir)
+  ) {
     return;
   }
   for (const prepared of prepareQueuedMessageDispatchWake(deps, wake)) {
@@ -221,6 +228,7 @@ async function executePreparedQueuedMessageDispatch(
   deps: QueueDispatchDeps,
   wake: PreparedQueuedMessageDispatchWake,
 ): Promise<void> {
+  if (isForkMaintenanceHeld(deps.config.dataDir)) return;
   switch (wake.kind) {
     case "host-connected":
       for (const threadId of listThreadIdsWithHostOfflineQueueWaits(
@@ -360,7 +368,8 @@ async function runInteractionSettledDispatch(
   deps: QueueDispatchDeps,
   threadId: string,
 ): Promise<void> {
-  if (deps.pendingInteractions.hasTurnBoundPendingThreadInteraction(threadId)) return;
+  if (deps.pendingInteractions.hasTurnBoundPendingThreadInteraction(threadId))
+    return;
   const cleared = clearThreadQueueWaitsOfKind(deps, {
     threadId,
     kind: "interaction",

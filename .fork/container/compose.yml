@@ -1,0 +1,28 @@
+name: bb-fork-canary
+services:
+  bb:
+    build:
+      context: ../..
+      dockerfile: .fork/container/Dockerfile
+    image: bb-fork-canary:0.45.0
+    environment:
+      BB_APP_URL: "${BB_FORK_CANARY_APP_URL:-http://127.0.0.1:39887}"
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:39887:38886"
+    volumes:
+      - canary-data:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 5g
+    cpus: 4
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  canary-data:

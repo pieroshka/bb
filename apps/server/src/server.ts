@@ -1,3 +1,4 @@
+import { isForkMaintenanceHeld } from "./services/fork-maintenance.js";
 import { recheckEnvironmentProvisioning } from "./services/threads/thread-environment-providers.js";
 import {
   enrolledInstallerScript,
@@ -492,6 +493,22 @@ export function createApp(
     return next();
   });
   app.use("*", async (context, next) => {
+    if (
+      context.req.path !== "/health" &&
+      isForkMaintenanceHeld(deps.config.dataDir)
+    ) {
+      context.header("Retry-After", "5");
+      return context.json(
+        {
+          error: "fork_maintenance",
+          message: "A verified update is being checked. Retry shortly.",
+        },
+        503,
+      );
+    }
+    return next();
+  });
+  app.use("*", async (context, next) => {
     captureTrustedRemoteAddress(context);
     return runWithTelemetryAppSurface(resolveRequestAppSurface(context), next);
   });
@@ -536,6 +553,9 @@ export function createApp(
     });
     return context.json({
       ok: true,
+      ...(isForkMaintenanceHeld(deps.config.dataDir)
+        ? { forkMaintenance: true }
+        : {}),
       ...(deps.config.launchId === undefined
         ? {}
         : { launchId: deps.config.launchId }),

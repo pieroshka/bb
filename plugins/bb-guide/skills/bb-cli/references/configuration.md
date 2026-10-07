@@ -228,3 +228,12 @@ The UI offers Replace binding or Cancel when assigning an occupied shortcut.
 plugin defaults and availability are resolved in each app window, where the
 plugin frontend runs. CLI/SDK callers should clear conflicting explicit
 bindings in the same update; plugin defaults yield to explicit bindings.
+
+## Maintained-fork deployments
+
+The source fork's external operator follows `fork-verified`, not npm or upstream
+main. See `.fork/DEPLOYMENT.md` in the maintained source checkout. It defers while
+threads or terminals run, gates admission during probation and restores failed
+pre-activation updates. Post-activation recovery preserves newly accepted work.
+Do not edit its private data-directory `.fork-maintenance` marker or use an
+upstream in-app update to replace a fork-managed runtime.

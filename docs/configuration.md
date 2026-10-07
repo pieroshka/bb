@@ -1934,3 +1934,14 @@ Publish updates with **Mobile Android (EAS)**, profile `preview`, **publish** on
 
 The publishing workflow verifies the signed APK and publishes both the checksum-named
 asset and the stable `bb-android.apk` alias, then `latest.json`.
+
+## Fork-managed deployment probation
+
+This fork includes an external, guarded deployment controller documented in
+[.fork/DEPLOYMENT.md](../.fork/DEPLOYMENT.md). It follows the fork's tested
+`fork-verified` revision, stages builds separately, and defers while threads or
+terminals are running. A private `.fork-maintenance` marker temporarily closes
+HTTP/WebSocket admission, queued dispatch and background services while readiness
+and rollback checks run. Failed startup restores the pre-activation runtime and
+offline data snapshot; recovery after activation preserves accepted work and never
+silently restores an older database. Do not create or delete this marker manually.

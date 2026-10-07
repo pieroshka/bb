@@ -462,3 +462,9 @@ providers do not implicitly choose an environment.
 `bb machine show` includes `threadStorageRootPath` from the latest daemon session
 without waking the machine. It works offline and with no live threads; the path
 is null before the first session. Reading details does not create directories.
+
+Fork-managed source runtimes can use the external operator described in
+`.fork/DEPLOYMENT.md`. It follows tested `fork-verified` revisions and defers
+updates while threads or terminals are running. A failed pre-activation update
+restores its prior runtime and data snapshot; post-activation recovery must
+preserve accepted work. Do not modify the private `.fork-maintenance` marker.

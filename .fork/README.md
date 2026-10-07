@@ -2,14 +2,14 @@
 
 Repository: https://github.com/pieroshka/bb
 
-This repository follows `get-bb/bb` **main**, retaining our per-machine
+This repository follows `get-bb/bb` stable desktop release tags, retaining our per-machine
 environment extension. The `Fork upstream sync` GitHub Actions workflow checks
 every six hours at minute 17 UTC and can also be dispatched manually. This
 repository setup does not install, restart, patch, or update a running BB app.
 
 ## How updates are promoted
 
-1. Fetch the configured upstream branch in an isolated GitHub checkout.
+1. Fetch the newest stable upstream release tag in an isolated GitHub checkout.
 2. Merge it with the current fork main, preserving both histories.
 3. Preserve `.fork/` and `.github/workflows/` from the fork. Upstream release
    and deployment workflows are not imported or executed by this automation.
@@ -41,10 +41,11 @@ be delayed by GitHub. Successful sync commits normally keep the repository activ
 Implementation and feature tests live in new, feature-owned files. Core changes
 are small imports, registration calls, an SDK interface extension/object spread,
 and a shared environment resolver call. CLI flags and discoverable documentation
-are the other integration points. Formatting is restricted to our new files.
+are the other integration points. Formatting is restricted to our new files. See [guarded deployment](DEPLOYMENT.md) for container isolation, probation and rollback boundaries.
 
-We do not modify upstream Drizzle schema, numbered migrations, snapshots,
-lockfiles, daemon wire types, or provider implementations. Machine secrets live
+The per-machine environment extension does not modify upstream Drizzle schema,
+numbered migrations, snapshots, lockfiles or daemon wire types. The separate
+Claude custom-backend fix and guarded deployment hooks are maintained patches. Machine secrets live
 in a separate encrypted store included in BB's existing server archives. See
 [the extension contract](../docs/host-machine-environment.md).
 
@@ -69,5 +70,5 @@ or any BB instance.
 
 For a future deployment, BB's source updater expects local `main` tracking
 `origin/main`. Keep origin pointed at this fork and upstream pointed at
-`https://github.com/get-bb/bb.git`. Deployment is a separate step; there is no
-deployment job or local scheduler in this setup.
+`https://github.com/get-bb/bb.git`. Deployment is a separate step; the external operator must be explicitly
+adopted after container and initial-handoff verification.

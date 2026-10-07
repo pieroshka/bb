@@ -32,3 +32,25 @@ jobs:
         run: pnpm install --frozen-lockfile --prefer-offline
       - name: Build and verify the fork
         run: bash .fork/verify.sh
+      - name: Verify isolated container boot and rollback before marking deployable
+        run: |
+          docker build -t bb-fork-ci -f .fork/container/Dockerfile .
+          docker run --rm --network none --memory 5g --cpus 4 --entrypoint node bb-fork-ci .fork/deployment.smoke.mjs
+
+  mark_verified:
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Mark the tested main commit for unattended deployment
+        env:
+          VERIFIED_SHA: ${{ github.sha }}
+        run: |
+          current=$(git ls-remote origin refs/heads/main | cut -f1)
+          test "$current" = "$VERIFIED_SHA"
+          git push origin "$VERIFIED_SHA:refs/heads/fork-verified"

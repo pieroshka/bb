@@ -24,6 +24,7 @@ function config(root) {
   if (
     value.schemaVersion !== 1 ||
     typeof value.upstream !== "string" ||
+    !["branch", "stable-release"].includes(value.tracking) ||
     !/^[A-Za-z0-9._/-]+$/u.test(value.branch) ||
     typeof value.repository !== "string" ||
     !Array.isArray(value.requiredFiles) ||
@@ -76,13 +77,37 @@ export function prepare(root, artifactDirectory) {
     throw new Error("Prepare requires a clean, isolated checkout");
   const settings = config(root);
   const base = git(root, "rev-parse", "HEAD");
-  git(
-    root,
-    "fetch",
-    "--no-tags",
-    settings.upstream,
-    `refs/heads/${settings.branch}`,
-  );
+  let upstreamRef = `refs/heads/${settings.branch}`;
+  if (settings.tracking === "stable-release") {
+    const releases = git(
+      root,
+      "ls-remote",
+      "--refs",
+      settings.upstream,
+      "refs/tags/desktop-v*",
+    )
+      .split("\n")
+      .flatMap((line) => {
+        const match =
+          /^[a-f0-9]{40}\s+(refs\/tags\/desktop-v(\d+)\.(\d+)\.(\d+))$/u.exec(
+            line,
+          );
+        if (match === null) return [];
+        const version = match.slice(2).map(Number);
+        if (version.some((part) => !Number.isSafeInteger(part))) return [];
+        return [{ ref: match[1], version }];
+      })
+      .sort(
+        (a, b) =>
+          b.version[0] - a.version[0] ||
+          b.version[1] - a.version[1] ||
+          b.version[2] - a.version[2],
+      );
+    if (releases.length === 0)
+      throw new Error("Upstream has no stable desktop release tags");
+    upstreamRef = releases[0].ref;
+  }
+  git(root, "fetch", "--no-tags", settings.upstream, upstreamRef);
   const upstream = git(root, "rev-parse", "FETCH_HEAD");
   try {
     git(root, "merge-base", "--is-ancestor", upstream, base);
@@ -112,7 +137,15 @@ export function prepare(root, artifactDirectory) {
       throw new Error(
         `Upstream needs a reviewed conflict resolution:\n${conflicts}`,
       );
-    git(root, "diff", "--cached", "--check");
+    git(
+      root,
+      "diff",
+      "--cached",
+      "--check",
+      "--",
+      ".",
+      ":(exclude)patches/*.patch",
+    );
     git(
       root,
       "commit",
@@ -123,6 +156,7 @@ export function prepare(root, artifactDirectory) {
       changed: true,
       base,
       upstream,
+      upstreamRef,
       branch,
       candidate: git(root, "rev-parse", "HEAD"),
     };
@@ -176,8 +210,10 @@ export function promote(root, artifactDirectory) {
   git(
     root,
     "push",
+    "--atomic",
     "origin",
     `${state.candidate}:refs/heads/${settings.branch}`,
+    `${state.candidate}:refs/heads/fork-verified`,
   );
   return state;
 }

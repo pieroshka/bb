@@ -58,6 +58,7 @@ function fixture() {
     ".fork/config.json",
     JSON.stringify({
       schemaVersion: 1,
+      tracking: "branch",
       upstream,
       branch: "main",
       repository: "fixture",
@@ -122,6 +123,7 @@ test("imports upstream code while retaining our patch and workflows, then promot
     );
     promote(f.checkout, f.artifacts);
     assert.equal(git(f.origin, "rev-parse", "main"), state.candidate);
+    assert.equal(git(f.origin, "rev-parse", "fork-verified"), state.candidate);
     assert.equal(prepare(f.checkout, f.artifacts).changed, false);
   } finally {
     f.cleanup();
@@ -188,6 +190,73 @@ test("rejects a bundle that differs from the candidate declared in its metadata"
     );
     assert.throws(() => promote(f.checkout, f.artifacts), /does not match/u);
     assert.equal(git(f.origin, "rev-parse", "main"), state.base);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("preserves dependency patch bytes without treating diff context indentation as source whitespace", () => {
+  const f = fixture();
+  try {
+    const patch = "@@ -1 +1 @@\n-\told\n+\tnew\n \tcontext\n";
+    write(f.upstream, "patches/dependency@1.patch", patch);
+    commit(f.upstream, "Add dependency patch");
+    prepare(f.checkout, f.artifacts);
+    promote(f.checkout, f.artifacts);
+    assert.equal(
+      readFileSync(join(f.checkout, "patches/dependency@1.patch"), "utf8"),
+      patch,
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("still rejects malformed whitespace in ordinary source and never promotes it", () => {
+  const f = fixture();
+  try {
+    write(f.upstream, "source.ts", "const value = 1; \n");
+    commit(f.upstream, "Add malformed source");
+    const base = git(f.origin, "rev-parse", "main");
+    assert.throws(
+      () => prepare(f.checkout, f.artifacts),
+      /diff --cached --check/u,
+    );
+    assert.equal(git(f.origin, "rev-parse", "main"), base);
+    assert.equal(git(f.checkout, "status", "--porcelain"), "");
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("stable tracking promotes the newest numeric release but excludes unreleased main and prereleases", () => {
+  const f = fixture();
+  try {
+    const settings = JSON.parse(
+      readFileSync(join(f.checkout, ".fork/config.json"), "utf8"),
+    );
+    write(
+      f.checkout,
+      ".fork/config.json",
+      JSON.stringify({ ...settings, tracking: "stable-release" }),
+    );
+    commit(f.checkout, "Track stable releases");
+    git(f.checkout, "push", "origin", "main");
+    write(f.upstream, "released.txt", "Released\n");
+    const target = commit(f.upstream, "Release");
+    git(f.upstream, "tag", "desktop-v0.9.0");
+    git(f.upstream, "tag", "desktop-v0.45.0");
+    write(f.upstream, "unreleased.txt", "Not released\n");
+    commit(f.upstream, "Unreleased change");
+    git(f.upstream, "tag", "desktop-v0.46.0-rc.1");
+    const state = prepare(f.checkout, f.artifacts);
+    assert.equal(state.upstream, target);
+    assert.equal(state.upstreamRef, "refs/tags/desktop-v0.45.0");
+    assert.throws(() => readFileSync(join(f.checkout, "unreleased.txt")), {
+      code: "ENOENT",
+    });
+    promote(f.checkout, f.artifacts);
+    assert.equal(prepare(f.checkout, f.artifacts).changed, false);
   } finally {
     f.cleanup();
   }

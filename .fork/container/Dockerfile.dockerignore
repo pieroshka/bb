@@ -1,0 +1,14 @@
+.git
+**/node_modules
+**/dist
+**/.turbo
+**/.bundled-runtime
+**/release
+**/tsconfig.tsbuildinfo
+**/.env*
+**/coverage
+.claude
+packages/templates/src/generated
+packages/plugin-build/src/generated
+packages/plugin-sdk/bundled-types
+.fork/local

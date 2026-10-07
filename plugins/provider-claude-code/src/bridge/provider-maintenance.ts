@@ -54,6 +54,64 @@ const claudeAccountSchema = z.object({
     .nullish(),
 });
 
+const claudeSettingsSchema = z.object({
+  env: z
+    .object({
+      ANTHROPIC_BASE_URL: z.string().optional(),
+      ANTHROPIC_AUTH_TOKEN: z.string().optional(),
+      ANTHROPIC_API_KEY: z.string().optional(),
+    })
+    .optional(),
+  apiKeyHelper: z.string().optional(),
+});
+
+function claudeConfigDir(): string {
+  const configured = process.env.CLAUDE_CONFIG_DIR?.trim();
+  if (!configured) return path.join(os.homedir(), ".claude");
+  if (configured === "~") return os.homedir();
+  if (configured.startsWith("~/"))
+    return path.join(os.homedir(), configured.slice(2));
+  return path.resolve(os.homedir(), configured);
+}
+
+async function configuredBackend(): Promise<{ hasAuth: boolean } | null> {
+  let settings: z.infer<typeof claudeSettingsSchema> = {};
+  try {
+    const parsed = claudeSettingsSchema.safeParse(
+      JSON.parse(
+        await fs.readFile(
+          path.join(claudeConfigDir(), "settings.json"),
+          "utf8",
+        ),
+      ),
+    );
+    if (parsed.success) settings = parsed.data;
+  } catch {}
+  const baseUrl =
+    process.env.ANTHROPIC_BASE_URL?.trim() ||
+    settings.env?.ANTHROPIC_BASE_URL?.trim();
+  if (!baseUrl) return null;
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    return null;
+  }
+  if (
+    (url.protocol !== "https:" && url.protocol !== "http:") ||
+    url.hostname === "api.anthropic.com"
+  )
+    return null;
+  const hasAuth = [
+    process.env.ANTHROPIC_AUTH_TOKEN,
+    process.env.ANTHROPIC_API_KEY,
+    settings.env?.ANTHROPIC_AUTH_TOKEN,
+    settings.env?.ANTHROPIC_API_KEY,
+    settings.apiKeyHelper,
+  ].some((value) => Boolean(value?.trim()));
+  return { hasAuth };
+}
+
 async function claudeExecutable(): Promise<string> {
   const explicit = process.env.BB_CLAUDE_CODE_EXECUTABLE?.trim();
   if (explicit) return explicit;
@@ -357,6 +415,7 @@ function healthResult(
     planLabel?: string | null;
     installedVersion?: string | null;
     statusMessage?: string | null;
+    loginCommand?: string | null;
   } = {},
 ): ProviderHealthResult {
   return {
@@ -370,7 +429,8 @@ function healthResult(
       minimumSupportedVersion: null,
       canInstall: true,
       canUpdate: status !== "not_installed",
-      loginCommand: "claude /login",
+      loginCommand:
+        args.loginCommand === undefined ? "claude /login" : args.loginCommand,
     },
   };
 }
@@ -382,6 +442,16 @@ export async function getClaudeProviderHealth(): Promise<ProviderHealthResult> {
   }
   const version = await readCliVersion(command);
   try {
+    const backend = await configuredBackend();
+    if (backend !== null) {
+      return healthResult(backend.hasAuth ? "ready" : "unknown", {
+        installedVersion: version,
+        loginCommand: null,
+        statusMessage: backend.hasAuth
+          ? "Claude Code uses a custom backend."
+          : "Claude Code uses a custom backend; BB cannot verify its credentials.",
+      });
+    }
     const [credentials, email] = await Promise.all([
       readCredentials(),
       readAccountEmail(),
@@ -527,6 +597,18 @@ export async function getClaudeProviderUsage(): Promise<ProviderUsageResult> {
   const command = await claudeExecutable();
   if ((await resolveExecutablePath(command)) === null) {
     return { supported: true, usage: { status: "not_installed" } };
+  }
+  if ((await configuredBackend()) !== null) {
+    return {
+      supported: true,
+      usage: {
+        status: "error",
+        accountEmail: null,
+        planLabel: null,
+        message:
+          "Claude Code uses a custom backend. BB needs a usage source for that backend to show its limits.",
+      },
+    };
   }
   const [credentials, account] = await Promise.all([
     readCredentials(),

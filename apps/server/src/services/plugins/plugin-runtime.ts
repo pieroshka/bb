@@ -1,3 +1,7 @@
+import {
+  isForkMaintenanceHeld,
+  waitForForkMaintenance,
+} from "../fork-maintenance.js";
 import type { MachineEnrollmentService } from "../machines/machine-services.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
@@ -539,6 +543,8 @@ export function createPluginRuntime(context: PluginRuntimeContext) {
       uncaughtError: undefined,
     };
     const current = serviceContext.run(instance, async () => {
+      if (isForkMaintenanceHeld(deps.dataDir))
+        await waitForForkMaintenance(deps.dataDir, controller.signal);
       await service.record.start(controller.signal);
     });
     service.current = current;

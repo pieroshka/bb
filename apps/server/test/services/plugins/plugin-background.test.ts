@@ -98,6 +98,38 @@ describe("plugin background services", () => {
     await rm(workDir, { recursive: true, force: true });
   });
 
+  it("does not execute plugin services during update probation and starts them when admission opens", async () => {
+    const previous = globals.__forkServiceStarts;
+    const marker = join(workDir, "data", ".fork-maintenance");
+    await mkdir(join(workDir, "data"), { recursive: true });
+    await writeFile(marker, "Update probation\n");
+    globals.__forkServiceStarts = 0;
+    try {
+      const rootDir = await writePlugin(workDir, {
+        name: "bb-plugin-probation",
+        serverSource: `
+          export default function plugin(bb: any) {
+            bb.background.service("work", {
+              start(signal: any) {
+                const g = globalThis as any;
+                g.__forkServiceStarts += 1;
+                return new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve()));
+              }
+            });
+          }
+        `,
+      });
+      await service.installPath(rootDir);
+      expect(globals.__forkServiceStarts).toBe(0);
+      await rm(marker);
+      await vi.waitFor(() => expect(globals.__forkServiceStarts).toBe(1));
+      await service.stop();
+    } finally {
+      if (previous === undefined) delete globals.__forkServiceStarts;
+      else globals.__forkServiceStarts = previous;
+    }
+  });
+
   it("starts services after load and aborts them on reload", async () => {
     const rootDir = await writePlugin(workDir, {
       name: "bb-plugin-connector",
