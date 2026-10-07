@@ -80,3 +80,18 @@ service. Development checkouts with uncommitted work are never switched or reset
 - Provide actual HTTP response metadata capture for every supported harness, using
   native metadata or an authenticated opt-in gateway where headers are hidden.
   Do not fabricate absent headers or claim compilation proves inference behavior.
+
+## Fork version identity
+
+The runtime package uses `0.45.0+emi` (and the corresponding upstream version
+on subsequent releases). `+emi` is SemVer build metadata, not a prerelease.
+CLI output, server version information and the enrolled-host tarball preserve it.
+Release precedence ignores metadata, so fork deployment selection and quarantine
+use the exact verified Git commit rather than comparing version strings.
+
+`.fork/config.json` owns `buildMetadata`. Synchronization reapplies it after each
+upstream merge. A package conflict is resolved automatically only when the fork's
+sole manifest change is the version metadata; unrelated manifest conflicts stop
+promotion. The official desktop client remains independently versioned. A branded
+runtime must not be installed from upstream npm by its metadata version: use the
+fork's source build or server-provided, digest-verified host artifact.

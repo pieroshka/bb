@@ -1,3 +1,8 @@
+import {
+  applyForkBranding,
+  resolveBrandingVersionConflict,
+  validateBuildMetadata,
+} from "./branding.mjs";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -35,7 +40,10 @@ function config(root) {
   ) {
     throw new Error("Invalid fork sync configuration");
   }
-  return value;
+  return {
+    ...value,
+    buildMetadata: validateBuildMetadata(value.buildMetadata ?? null),
+  };
 }
 
 function verifyCandidate(root, state) {
@@ -132,11 +140,15 @@ export function prepare(root, artifactDirectory) {
       "--",
       ...protectedPaths,
     );
+    resolveBrandingVersionConflict(root, settings.buildMetadata);
     const conflicts = git(root, "diff", "--name-only", "--diff-filter=U");
     if (conflicts !== "")
       throw new Error(
         `Upstream needs a reviewed conflict resolution:\n${conflicts}`,
       );
+    applyForkBranding(root, settings.buildMetadata);
+    if (settings.buildMetadata !== null)
+      git(root, "add", "--", "packages/bb-app/package.json");
     git(
       root,
       "diff",

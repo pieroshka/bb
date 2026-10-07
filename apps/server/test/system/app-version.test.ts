@@ -43,6 +43,24 @@ function createStubFetch(
 }
 
 describe("createAppVersionService", () => {
+  it.each([
+    ["0.45.0", false],
+    ["0.45.0+other", false],
+    ["0.46.0", true],
+  ])(
+    "retains fork identity while comparing against %s",
+    async (latestVersion, updateAvailable) => {
+      const service = createAppVersionService({
+        config: { appVersion: "0.45.0+emi", isDevelopment: false },
+        fetchImpl: createStubFetch([{ body: { version: latestVersion } }], []),
+        logger: testLogger,
+      });
+      const response = await service.getSystemVersion();
+      expect(response.currentVersion).toBe("0.45.0+emi");
+      expect(response.updateAvailable).toBe(updateAvailable);
+    },
+  );
+
   it("skips the npm lookup in development mode", async () => {
     const calls: FetchCall[] = [];
     const service = createAppVersionService({

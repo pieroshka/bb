@@ -48,6 +48,15 @@ function fixture() {
     ".github/workflows/upstream.yml",
     "original upstream workflow\n",
   );
+  write(
+    upstream,
+    "packages/bb-app/package.json",
+    JSON.stringify(
+      { name: "bb-app", version: "0.44.0", engines: { node: ">=22.19.0" } },
+      null,
+      2,
+    ) + "\n",
+  );
   commit(upstream, "Base");
   git(root, "clone", upstream, checkout);
   identity(checkout);
@@ -257,6 +266,93 @@ test("stable tracking promotes the newest numeric release but excludes unrelease
     });
     promote(f.checkout, f.artifacts);
     assert.equal(prepare(f.checkout, f.artifacts).changed, false);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("keeps fork branding on a new upstream release without blocking the version-only merge", () => {
+  const f = fixture();
+  try {
+    const settings = JSON.parse(
+      readFileSync(join(f.checkout, ".fork/config.json"), "utf8"),
+    );
+    write(
+      f.checkout,
+      ".fork/config.json",
+      JSON.stringify({ ...settings, buildMetadata: "emi" }),
+    );
+    const ours = JSON.parse(
+      readFileSync(join(f.checkout, "packages/bb-app/package.json"), "utf8"),
+    );
+    write(
+      f.checkout,
+      "packages/bb-app/package.json",
+      JSON.stringify({ ...ours, version: "0.44.0+emi" }, null, 2) + "\n",
+    );
+    commit(f.checkout, "Brand fork");
+    git(f.checkout, "push", "origin", "main");
+    write(
+      f.upstream,
+      "packages/bb-app/package.json",
+      JSON.stringify(
+        { ...ours, version: "0.45.0", engines: { node: ">=24" } },
+        null,
+        2,
+      ) + "\n",
+    );
+    commit(f.upstream, "Release new version");
+    const state = prepare(f.checkout, f.artifacts);
+    const branded = JSON.parse(
+      readFileSync(join(f.checkout, "packages/bb-app/package.json"), "utf8"),
+    );
+    assert.equal(branded.version, "0.45.0+emi");
+    assert.equal(branded.engines.node, ">=24");
+    promote(f.checkout, f.artifacts);
+    assert.equal(git(f.origin, "rev-parse", "main"), state.candidate);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("does not resolve unrelated package conflicts under the guise of version branding", () => {
+  const f = fixture();
+  try {
+    const settings = JSON.parse(
+      readFileSync(join(f.checkout, ".fork/config.json"), "utf8"),
+    );
+    write(
+      f.checkout,
+      ".fork/config.json",
+      JSON.stringify({ ...settings, buildMetadata: "emi" }),
+    );
+    write(
+      f.checkout,
+      "packages/bb-app/package.json",
+      JSON.stringify(
+        { name: "bb-app", version: "0.44.0+emi", engines: { node: ">=25" } },
+        null,
+        2,
+      ) + "\n",
+    );
+    commit(f.checkout, "Brand and change runtime");
+    git(f.checkout, "push", "origin", "main");
+    const base = git(f.origin, "rev-parse", "main");
+    write(
+      f.upstream,
+      "packages/bb-app/package.json",
+      JSON.stringify(
+        { name: "bb-app", version: "0.45.0", engines: { node: ">=24" } },
+        null,
+        2,
+      ) + "\n",
+    );
+    commit(f.upstream, "Release new runtime");
+    assert.throws(
+      () => prepare(f.checkout, f.artifacts),
+      /beyond build metadata/u,
+    );
+    assert.equal(git(f.origin, "rev-parse", "main"), base);
   } finally {
     f.cleanup();
   }

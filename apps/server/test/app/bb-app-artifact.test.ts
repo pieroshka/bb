@@ -104,18 +104,32 @@ afterEach(async () => {
 });
 
 describe("bb-app artifact service (desktop packaging)", () => {
-  it(
-    "packs the runtime when Electron Builder omits the README",
-    async () => {
+  it.each(["1.2.3-test", "0.45.0+emi"])(
+    "packs runtime version %s when Electron Builder omits the README",
+    async (version) => {
       const test = await fixture("packaged");
+      await writeFile(
+        join(test.packageRoot, "package.json"),
+        JSON.stringify({ ...packageJson, version }),
+      );
       await rm(join(test.packageRoot, "README.md"));
       const service = createBbAppArtifactService({
         dataDir: join(test.root, "data"),
         serverEntryUrl: pathToFileURL(test.serverEntry).href,
       });
 
-      await expect(service.getVersion()).resolves.toBe("1.2.3-test");
+      await expect(service.getVersion()).resolves.toBe(version);
       const artifact = await service.getArtifact();
+      const packedManifest = JSON.parse(
+        (
+          await execFileAsync("tar", [
+            "-xOf",
+            artifact.path,
+            "package/package.json",
+          ])
+        ).stdout,
+      );
+      expect(packedManifest.version).toBe(version);
       const listing = (
         await execFileAsync("tar", ["-tzf", artifact.path])
       ).stdout.split(/\r?\n/u);

@@ -12,7 +12,9 @@
     "plugins/provider-claude-code/src/bridge/provider-maintenance.ts",
     "apps/server/src/services/fork-maintenance.ts",
     ".fork/deployment.mjs",
-    ".fork/deployment.smoke.mjs"
+    ".fork/deployment.smoke.mjs",
+    ".fork/branding.mjs"
   ],
-  "tracking": "stable-release"
+  "tracking": "stable-release",
+  "buildMetadata": "emi"
 }
