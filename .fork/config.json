@@ -13,7 +13,9 @@
     "apps/server/src/services/fork-maintenance.ts",
     ".fork/deployment.mjs",
     ".fork/deployment.smoke.mjs",
-    ".fork/branding.mjs"
+    ".fork/branding.mjs",
+    ".fork/service.mjs",
+    ".fork/adoption.smoke.mjs"
   ],
   "tracking": "stable-release",
   "buildMetadata": "emi"

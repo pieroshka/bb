@@ -69,6 +69,19 @@ try {
   await assert.rejects(readFile(join(dataDir, ".fork-maintenance")), {
     code: "ENOENT",
   });
+  await writeFile(
+    join(dataDir, ".fork-maintenance"),
+    "Committed activation interrupted before admission\n",
+  );
+  assert.equal(
+    (await fetch(new URL("/api/v1/system/version", config.healthUrl))).status,
+    503,
+  );
+  await operate(config, "check");
+  assert.equal(
+    (await fetch(new URL("/api/v1/system/version", config.healthUrl))).status,
+    200,
+  );
   sqlite("PRAGMA user_version=7;");
   const healthy = await operate(config, "status");
   process.kill(-healthy.pid, "SIGTERM");
@@ -84,6 +97,7 @@ try {
       failedCandidateQuarantined: true,
       healthyCandidateActivated: true,
       postActivationRecoveryPreservedWrites: true,
+      committedActivationReopenedAdmission: true,
       isolatedDataDir: dataDir,
     }),
   );

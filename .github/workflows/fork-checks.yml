@@ -36,6 +36,8 @@ jobs:
         run: |
           docker build -t bb-fork-ci -f .fork/container/Dockerfile .
           docker run --rm --network none --memory 5g --cpus 4 --entrypoint node bb-fork-ci .fork/deployment.smoke.mjs
+          docker build -t bb-fork-adoption-ci -f .fork/container/Adoption.Dockerfile .
+          docker run --rm --network none --memory 5g --cpus 4 bb-fork-adoption-ci
 
   mark_verified:
     needs: verify

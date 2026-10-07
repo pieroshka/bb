@@ -54,6 +54,7 @@ from `.nvmrc`, the repository's pnpm version, git, sqlite3, and ps on macOS/Linu
 
 - `node .fork/deployment.mjs status CONFIG`: inspect the journal.
 - `node .fork/deployment.mjs bootstrap CONFIG RUNTIME`: start a guarded fresh instance.
+- `node .fork/deployment.mjs adopt CONFIG RUNTIME LEGACY`: explicitly adopt an idle legacy installation with startup rollback.
 - `node .fork/deployment.mjs activate CONFIG RUNTIME`: deploy after idle checks.
 - `node .fork/deployment.mjs check CONFIG`: readiness and same-version recovery.
 - `node .fork/deployment.mjs recover CONFIG`: recover an interrupted transaction.
@@ -66,17 +67,59 @@ the BB data directory. A runtime manifest has id, absolute command/cwd, string a
 and explicit string env. An operator config has schemaVersion 1, absolute repo,
 deploymentConfig, node and pnpm, plus intervalMs of at least 60000.
 
-Production adoption is deliberately NOT implicit. Bootstrap refuses an existing
-`bb-app-runtime.json`; an unpatched legacy runtime cannot close admission and must
-not be replaced by pretending it is a guarded runtime. First transition from the
-installed desktop needs a separately validated, idle handoff and separate daemon
-service. Development checkouts with uncommitted work are never switched or reset.
+Production adoption is explicit. Bootstrap refuses an existing
+`bb-app-runtime.json`. The `adopt` command requires a legacy manifest containing
+`runtime` (with `unguarded: true`), `expectedRecord` (the exact current runtime
+record), and `desktop` (`null` for a standalone launcher, or its verified parent
+`pid` and full `command`). It refuses active threads and running terminals, stops
+the verified desktop/launcher gracefully, checks idle state again offline, and
+snapshots before starting the guarded fork. A failed candidate restores the data
+and starts the actual previous launcher, with its original machine identity.
+Legacy rollback disables unattended updates until a new explicit adoption.
+The legacy server cannot close admission atomically; do the initial transition
+in an idle window without submitting new work. Later fork updates have an
+admission gate. Development checkouts with uncommitted work are never reset.
+
+## macOS service
+
+`node .fork/service.mjs install SERVICE` installs a per-user launchd agent. It
+starts at login, survives desktop closure, and supervises the fork launcher,
+which owns both server and local daemon. Installation immediately starts the
+idle watcher; it never closes terminals or stops active threads to force adoption.
+`node .fork/service.mjs status SERVICE` reads its last result. The service writes
+`service-status.json`, `state.json`, backups, and logs under `stateDir`.
+
+The service JSON has `schemaVersion: 1`, absolute `deploymentConfig`, `runtime`,
+`legacy`, and `operatorConfig` paths, a launchd-safe `label`, `intervalMs` of at
+least 1000, an explicit `updatesEnabled` boolean, `desktopCommand` (an absolute
+executable or `null`), and string `desktopArgs`. Runtime and legacy paths are
+used only for initial adoption. When configured, the desktop reopens with
+`BB_DESKTOP_ATTACH_WITHOUT_PROMPT=1` after successful adoption and attaches to
+the service-owned runtime. Opening the official desktop normally may ask to
+connect to the existing server; choose Connect. Its own version remains separate.
+
+Keep the service tools and runtime in committed, dedicated release directories.
+Use Node 22 from `.nvmrc`. Automatic checks use the configured repository's
+`origin/fork-verified`; preparation failures leave the current runtime selected.
+Stopping the launchd agent leaves the independently supervised runtime running.
+To stop both, unload the launchd agent and run `deployment.mjs stop CONFIG`.
+
+Cold recovery may start with stale active database records only when both the
+recorded launcher and local daemon are absent. A surviving daemon blocks that
+recovery. Once activation is committed, recovery reopens admission and restarts
+the same runtime without restoring a pre-update data snapshot.
+
+`adoption.smoke.mjs` exercises a real 0.44 installation, terminal-idle refusal,
+failed-candidate rollback, successful fork adoption, host identity, and cold
+recovery with a stale terminal record. On macOS pass `BB_FORK_LEGACY_COMMAND`,
+`BB_FORK_LEGACY_ENTRY`, and `BB_FORK_LEGACY_DESKTOP` to test desktop ownership.
+The `Adoption.Dockerfile` supplies the real npm release for the network-disabled
+Linux test. No provider credentials are required or copied by these fresh tests.
 
 ## Remaining rollout gates
 
-- Prove the initial desktop-to-fork handoff and rollback without terminating terminals.
-- Install the external OS service only after that handoff is validated.
-- Test a production-data clone in a network-isolated container before migration.
+- Before each production adoption, test the production-data clone in a network-isolated container.
+- Confirm all active work is idle before the service can adopt the production installation.
 - Provide actual HTTP response metadata capture for every supported harness, using
   native metadata or an authenticated opt-in gateway where headers are hidden.
   Do not fabricate absent headers or claim compilation proves inference behavior.

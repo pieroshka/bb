@@ -132,6 +132,7 @@ async function tick() {
     args: [join(candidateDir, "packages/bb-app/dist/bb-app.js"), "start"],
     cwd: candidateDir,
     env: {
+      ...current.current.env,
       NODE_ENV: "production",
       BB_SERVER_PORT: String(new URL(deployment.healthUrl).port),
     },

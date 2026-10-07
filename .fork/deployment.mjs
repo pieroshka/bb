@@ -59,6 +59,7 @@ function validateRuntime(value) {
     !isAbsolute(value.cwd) ||
     !Array.isArray(value.args) ||
     value.args.some((arg) => typeof arg !== "string") ||
+    (value.unguarded !== undefined && value.unguarded !== true) ||
     !value.env ||
     typeof value.env !== "object" ||
     Object.values(value.env).some((entry) => typeof entry !== "string")
@@ -165,7 +166,13 @@ function verifyProcess(state) {
 async function stopRuntime(state) {
   if (state.pid === null || !alive(state.pid)) return;
   verifyProcess(state);
-  process.kill(-state.pid, "SIGTERM");
+  const group = spawnSync("ps", ["-p", String(state.pid), "-o", "pgid="], {
+    encoding: "utf8",
+  });
+  process.kill(
+    Number(group.stdout.trim()) === state.pid ? -state.pid : state.pid,
+    "SIGTERM",
+  );
   const deadline = Date.now() + 30_000;
   while (alive(state.pid) && Date.now() < deadline) await setTimeout(100);
   if (alive(state.pid))
@@ -183,9 +190,22 @@ async function launch(config, runtime) {
     0o600,
   );
   try {
+    const env = { ...process.env, ...runtime.env, BB_DATA_DIR: config.dataDir };
+    for (const key of [
+      "BB_THREAD_ID",
+      "BB_ENVIRONMENT_ID",
+      "BB_PROJECT_ID",
+      "BB_THREAD_STORAGE",
+      "BB_CLI",
+      "BB_CLI_REEXEC",
+      "BB_SERVER_URL",
+      "ELECTRON_RUN_AS_NODE",
+    ]) {
+      if (!(key in runtime.env)) delete env[key];
+    }
     const child = spawn(runtime.command, runtime.args, {
       cwd: runtime.cwd,
-      env: { ...process.env, ...runtime.env, BB_DATA_DIR: config.dataDir },
+      env,
       detached: true,
       stdio: ["ignore", log.fd, log.fd],
     });
@@ -344,13 +364,118 @@ async function restore(config, path) {
     });
 }
 
-export async function operate(config, command, runtime = null) {
+export async function operate(config, command, runtime = null, legacy = null) {
   const release = await acquire(config);
   const statePath = join(config.stateDir, "state.json");
   let state = await readState(config);
   const marker = join(config.dataDir, ".fork-maintenance");
   try {
     if (command === "status") return state;
+    if (command === "adopt") {
+      if (state.current !== null && !state.current.unguarded)
+        throw new Error("This instance has already been adopted");
+      const candidate = validateRuntime(runtime);
+      if (candidate.unguarded)
+        throw new Error("Adoption requires a guarded candidate");
+      if (state.quarantined.includes(candidate.id))
+        throw new Error("Candidate is quarantined after a failed deployment");
+      const previous = validateRuntime(legacy?.runtime);
+      if (!previous.unguarded)
+        throw new Error("Legacy runtime must be explicitly unguarded");
+      const record = await json(join(config.dataDir, "bb-app-runtime.json"));
+      if (
+        !Number.isInteger(record.pid) ||
+        record.pid < 1 ||
+        record.pid !== legacy.expectedRecord.pid ||
+        record.entryPath !== legacy.expectedRecord.entryPath ||
+        record.startedAt !== legacy.expectedRecord.startedAt ||
+        !previous.args.includes(record.entryPath)
+      )
+        throw new Error("Legacy runtime changed; adoption refused");
+      if (
+        legacy.desktop !== null &&
+        (!Number.isInteger(legacy.desktop.pid) ||
+          legacy.desktop.pid < 1 ||
+          !isAbsolute(legacy.desktop.command))
+      )
+        throw new Error("Invalid legacy desktop owner");
+      const old = { ...state, current: previous, pid: record.pid };
+      verifyProcess(old);
+      if (!alive(old.pid)) throw new Error("Legacy runtime is not running");
+      await health(config, false);
+      if (
+        databaseFacts(config).activeThreads ||
+        databaseFacts(config).runningTerminals
+      )
+        return { ...state, deferred: "active-threads-or-terminals" };
+      if (legacy.desktop !== null) {
+        const owner = spawnSync(
+          "ps",
+          ["-p", String(legacy.desktop.pid), "-o", "command="],
+          { encoding: "utf8" },
+        );
+        const parent = spawnSync(
+          "ps",
+          ["-p", String(record.pid), "-o", "ppid="],
+          { encoding: "utf8" },
+        );
+        if (
+          owner.status !== 0 ||
+          owner.stdout.trim() !== legacy.desktop.command ||
+          Number(parent.stdout.trim()) !== legacy.desktop.pid
+        )
+          throw new Error("Legacy desktop ownership changed; adoption refused");
+      }
+      state = {
+        ...old,
+        phase: "switching",
+        transaction: {
+          id: randomUUID(),
+          previous,
+          candidate,
+          backup: null,
+        },
+      };
+      await save(statePath, state);
+      if (legacy.desktop !== null) {
+        process.kill(legacy.desktop.pid, "SIGTERM");
+        const deadline = Date.now() + 30_000;
+        while (alive(legacy.desktop.pid) && Date.now() < deadline)
+          await setTimeout(100);
+        if (alive(legacy.desktop.pid))
+          throw new Error("Legacy desktop did not stop gracefully");
+      }
+      await stopRuntime(state);
+      state.pid = null;
+      await save(statePath, state);
+      if (
+        databaseFacts(config).activeThreads ||
+        databaseFacts(config).runningTerminals
+      )
+        throw new Error(
+          "Work arrived during legacy shutdown; restoring the legacy runtime",
+        );
+      await writeFile(marker, "Initial fork adoption\n", {
+        flag: "wx",
+        mode: 0o600,
+      });
+      state.transaction.backup = await snapshot(config, state.transaction.id);
+      await save(statePath, state);
+      state.current = candidate;
+      state.pid = await launch(config, candidate);
+      state.phase = "probation";
+      await save(statePath, state);
+      await waitHealthy(config, state, true);
+      await setTimeout(config.probationMs);
+      await health(config, true);
+      state.previous = previous;
+      state.transaction = null;
+      state.phase = "running";
+      state.lastError = null;
+      await save(statePath, state);
+      await rm(marker);
+      return state;
+    }
     if (command === "bootstrap") {
       if (
         state.current !== null ||
@@ -381,22 +506,42 @@ export async function operate(config, command, runtime = null) {
       return state;
     }
     if (command === "check") {
+      if (state.current?.unguarded)
+        throw new Error(
+          "Legacy rollback is running; a new explicit adoption is required",
+        );
       if (state.transaction !== null)
         throw new Error(
           "An interrupted deployment requires recover before health monitoring",
         );
       if (state.current === null) throw new Error("No managed runtime exists");
       try {
-        await health(config, false);
+        const status = await health(config, false);
         if (state.phase !== "running")
           throw new Error("Runtime still requires guarded recovery");
+        if (status.forkMaintenance === true) await rm(marker, { force: true });
         return state;
       } catch {
-        if (
-          databaseFacts(config).activeThreads !== 0 ||
-          databaseFacts(config).runningTerminals !== 0
-        )
-          return { ...state, deferred: "active-threads-or-terminals" };
+        if (alive(state.pid)) {
+          if (
+            databaseFacts(config).activeThreads ||
+            databaseFacts(config).runningTerminals
+          )
+            return { ...state, deferred: "active-threads-or-terminals" };
+        } else {
+          const daemonPort = state.current.env.BB_HOST_DAEMON_PORT ?? "38887";
+          const daemonAlive = await fetch(
+            `http://127.0.0.1:${daemonPort}/health`,
+            {
+              signal: AbortSignal.timeout(3000),
+            },
+          ).then(
+            (response) => response.ok,
+            () => false,
+          );
+          if (daemonAlive)
+            return { ...state, deferred: "orphaned-local-daemon" };
+        }
         await writeFile(marker, "Same-version recovery\n", { mode: 0o600 });
         await stopRuntime(state);
         state.pid = await launch(config, state.current);
@@ -427,9 +572,10 @@ export async function operate(config, command, runtime = null) {
       if (state.transaction.backup !== null)
         await restore(config, state.transaction.backup);
       state.current = state.transaction.previous;
+      if (state.current.unguarded) await rm(marker, { force: true });
       state.pid = await launch(config, state.current);
       await save(statePath, state);
-      await waitHealthy(config, state, true);
+      await waitHealthy(config, state, !state.current.unguarded);
       await rm(marker, { force: true });
       state.phase = "running";
       state.transaction = null;
@@ -501,15 +647,16 @@ export async function operate(config, command, runtime = null) {
         if (state.transaction.backup !== null)
           await restore(config, state.transaction.backup);
         state.current = state.transaction.previous;
+        if (state.current.unguarded) await rm(marker, { force: true });
         state.pid = await launch(config, state.current);
         await save(statePath, state);
-        await waitHealthy(config, state, true);
+        await waitHealthy(config, state, !state.current.unguarded);
         state.quarantined = [...new Set([...state.quarantined, failed])];
         state.transaction = null;
         state.phase = "running";
         state.lastError = failure;
         await save(statePath, state);
-        await rm(marker);
+        await rm(marker, { force: true });
       } catch (rollbackError) {
         state.phase = "blocked";
         state.lastError = `${failure}; rollback blocked: ${rollbackError.message}`;
@@ -529,15 +676,16 @@ if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  const [command, configPath, runtimePath] = process.argv.slice(2);
+  const [command, configPath, runtimePath, legacyPath] = process.argv.slice(2);
   if (!command || !configPath)
     throw new Error(
-      "Usage: node .fork/deployment.mjs status|bootstrap|activate|stop|recover|check <config.json> [runtime.json]",
+      "Usage: node .fork/deployment.mjs status|bootstrap|adopt|activate|stop|recover|check <config.json> [runtime.json] [legacy.json]",
     );
   const result = await operate(
     await readDeploymentConfig(resolve(configPath)),
     command,
     runtimePath ? await json(resolve(runtimePath)) : null,
+    legacyPath ? await json(resolve(legacyPath)) : null,
   );
   console.log(JSON.stringify(result));
 }
