@@ -6,6 +6,18 @@
       "upstreamBase": "8a9f2816d4046bee5e488dbf88e36a69db271d31",
       "commit": "578a1eccb08e6ebc0709f221825344fc19faa5ba",
       "contract": "docs/host-machine-environment.md"
+    },
+    {
+      "id": "claude-custom-backend",
+      "upstreamBase": "129f621771a3e275773992db648316966ac207cf",
+      "commit": "9d0ff48591da13c77857cf5353462da1b8f7f13f",
+      "contract": ".fork/DEPLOYMENT.md"
+    },
+    {
+      "id": "guarded-fork-deployment",
+      "upstreamBase": "129f621771a3e275773992db648316966ac207cf",
+      "commit": "9d0ff48591da13c77857cf5353462da1b8f7f13f",
+      "contract": ".fork/DEPLOYMENT.md"
     }
   ]
 }
