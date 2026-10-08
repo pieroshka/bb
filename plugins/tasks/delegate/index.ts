@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type {
   BbPluginApi,
   ExperimentalPluginRpcHandlersWithContext,
@@ -304,18 +304,24 @@ export function handlers(
   store: TasksApiStore,
 ): ExperimentalPluginRpcHandlersWithContext<typeof delegationRpcContract> {
   return {
-    async delegate(input) {
+    async delegate(input, context) {
+      if (input.assignmentId && context.experimental_caller.kind !== "plugin")
+        throw new Error(
+          "Producer assignment identity requires an authenticated plugin caller",
+        );
+      const heldBeforeRead = store.executions.active(input.taskId);
+      if (heldBeforeRead && heldBeforeRead.assignmentId !== input.assignmentId)
+        throw new Error(
+          `Task execution is reserved by ${heldBeforeRead.backendId}; reconcile that assignment before delegating`,
+        );
       const snapshot = await store.executions.snapshot(input.taskId);
       const task = requireTask(store.tasks, input.taskId);
-      const held = store.executions.active(task.id);
-      if (held)
-        throw new Error(
-          `Task execution is reserved by ${held.backendId}; reconcile that assignment before delegating`,
-        );
       const project = requireProject(store.tasks, task.projectId);
       const linkedBbProjectId = requireLinkedBbProject(project);
       const preset = requirePreset(store.tasks, input.presetId);
-      const comments = store.tasks.listComments(task.id);
+      const comments = store.tasks
+        .listComments(task.id)
+        .filter((comment) => comment.kind !== "system");
       const recentComments = comments.slice(-5);
       const title = delegatedThreadTitle(task);
       const execution = presetExecutionSchema.parse({
@@ -335,13 +341,66 @@ export function handlers(
         extraInstructions: input.extraInstructions,
       });
 
+      const callerId =
+        context.experimental_caller.kind === "plugin"
+          ? context.experimental_caller.pluginId
+          : "tasks-ui";
+      const connectionId = input.assignmentId
+        ? `delegate:${createHash("sha256")
+            .update(
+              JSON.stringify({
+                callerId,
+                preset,
+                prompt,
+                requirementsFingerprint: snapshot.requirementsFingerprint,
+              }),
+            )
+            .digest("hex")}`
+        : "local";
+      if (input.assignmentId) {
+        const previous = store.executions
+          .history(task.id)
+          .find(
+            (item) =>
+              item.assignmentId === input.assignmentId &&
+              item.ownerPluginId === "tasks",
+          );
+        if (previous) {
+          if (
+            previous.connectionId !== connectionId ||
+            previous.backendId !== "local-tasks"
+          )
+            throw new Error(
+              "Delegation assignment was already used with a different caller, preset or prompt",
+            );
+          if (previous.localThreadIds.length !== 1)
+            throw new Error(
+              "Delegation result remains unknown; the retained assignment cannot respawn",
+            );
+          const threadId = previous.localThreadIds[0];
+          if (
+            !store.tasks
+              .listTaskThreads(task.id)
+              .some((thread) => thread.threadId === threadId)
+          )
+            throw new Error(
+              "Delegation attachment changed; inspect its original execution",
+            );
+          return { threadId };
+        }
+      }
+      const held = store.executions.active(task.id);
+      if (held)
+        throw new Error(
+          `Task execution is reserved by ${held.backendId}; reconcile that assignment before delegating`,
+        );
       const environment = await presetSpawnEnvironment(bb, preset);
       const reservation = store.executions.reserve({
         snapshot,
         ownerPluginId: "tasks",
         backendId: "local-tasks",
-        connectionId: "local",
-        assignmentId: randomUUID(),
+        connectionId,
+        assignmentId: input.assignmentId ?? randomUUID(),
       });
       publishTasksChanged(bb, task.id, task.projectId);
       const thread = await bb.sdk.threads

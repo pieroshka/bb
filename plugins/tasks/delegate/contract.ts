@@ -11,6 +11,7 @@ export const delegationRpcContract = defineRpcContract({
       .object({
         taskId: idSchema,
         presetId: idSchema,
+        assignmentId: z.uuid().optional(),
         extraInstructions: z.string().optional(),
       })
       .strict(),

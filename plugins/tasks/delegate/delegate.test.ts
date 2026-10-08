@@ -631,3 +631,118 @@ describe("delegation seed prompt", () => {
     `);
   });
 });
+
+it("replays an authenticated producer delegation without respawn and rejects changed provenance", async () => {
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "tasks",
+    sdk: {
+      threads: {
+        spawn: async () => ({ id: "thr_proven" }),
+        get: async () =>
+          makeThreadResponse({ id: "thr_proven", status: "starting" }),
+      },
+    },
+  });
+  try {
+    const store = createStore(bb);
+    const project = store.tasks.createProject({
+      name: "Delivery",
+      prefix: "DEL",
+      color: "blue",
+      linkedBbProjectId: "proj_test",
+    });
+    const task = store.tasks.createTask({
+      projectId: project.id,
+      title: "Exact assignment",
+    });
+    const preset = createTestPreset(store);
+    registerDelegation(bb, store);
+    const input = {
+      taskId: task.id,
+      presetId: preset.id,
+      assignmentId: crypto.randomUUID(),
+      extraInstructions: "Frozen producer instructions",
+    };
+    const caller = {
+      experimental_caller: {
+        kind: "plugin" as const,
+        pluginId: "software-factory",
+      },
+    };
+    await expect(harness.callRpc("delegate", input)).rejects.toThrow(
+      "authenticated plugin",
+    );
+    expect(await harness.callRpc("delegate", input, caller)).toEqual({
+      threadId: "thr_proven",
+    });
+    expect(await harness.callRpc("delegate", input, caller)).toEqual({
+      threadId: "thr_proven",
+    });
+    await expect(
+      harness.callRpc(
+        "delegate",
+        { ...input, extraInstructions: "Changed instructions" },
+        caller,
+      ),
+    ).rejects.toThrow("different caller, preset or prompt");
+    await expect(
+      harness.callRpc("delegate", input, {
+        experimental_caller: { kind: "plugin", pluginId: "unrelated" },
+      }),
+    ).rejects.toThrow("different caller, preset or prompt");
+    store.tasks.updatePreset(preset.id, { instructions: "Changed preset" });
+    await expect(harness.callRpc("delegate", input, caller)).rejects.toThrow(
+      "different caller, preset or prompt",
+    );
+    expect(harness.sdk.callsTo("threads.spawn")).toHaveLength(1);
+  } finally {
+    await harness.dispose();
+  }
+});
+it("retains an uncertain producer delegation without a second spawn", async () => {
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "tasks",
+    sdk: {
+      threads: {
+        spawn: async () => {
+          throw new Error("Lost spawn response");
+        },
+      },
+    },
+  });
+  try {
+    const store = createStore(bb);
+    const project = store.tasks.createProject({
+      name: "Delivery",
+      prefix: "DEL",
+      color: "blue",
+      linkedBbProjectId: "proj_test",
+    });
+    const task = store.tasks.createTask({
+      projectId: project.id,
+      title: "Unknown assignment",
+    });
+    const preset = createTestPreset(store);
+    registerDelegation(bb, store);
+    const input = {
+      taskId: task.id,
+      presetId: preset.id,
+      assignmentId: crypto.randomUUID(),
+    };
+    const caller = {
+      experimental_caller: {
+        kind: "plugin" as const,
+        pluginId: "software-factory",
+      },
+    };
+    await expect(harness.callRpc("delegate", input, caller)).rejects.toThrow(
+      "Lost spawn response",
+    );
+    await expect(harness.callRpc("delegate", input, caller)).rejects.toThrow(
+      "cannot respawn",
+    );
+    expect(harness.sdk.callsTo("threads.spawn")).toHaveLength(1);
+  } finally {
+    await harness.dispose();
+  }
+});

@@ -46,7 +46,12 @@ Stop, idle, failure to contact a backend, or an uncertain start never means canc
 or terminal. A terminal assignment with changed local requirements can release
 ownership without changing the owner's current task status.
 
-Native delegation reserves before spawning and retains unknown outcomes. Existing
+Native delegation reserves before spawning and retains unknown outcomes.
+Authenticated plugin callers may persist and supply `delegateTask.assignmentId`
+before dispatch. Exact retries bind the caller, preset, prompt, and frozen
+requirements and return only the original proven attached thread. Missing thread
+proof holds the assignment instead of spawning again. Changed caller or inputs
+cannot reuse that identity. Interactive delegation still allocates a fresh identity. Existing
 unsettled historical worker attachments block a new assignment. A native thread's
 idle or error state does not release ownership; confirmed thread deletion closes
 that native assignment without asserting task completion. Factory callers must
