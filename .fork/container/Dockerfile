@@ -3,6 +3,7 @@ ARG BB_FORK_COMMIT=local-test
 LABEL org.opencontainers.image.revision=$BB_FORK_COMMIT
 RUN apt-get update && apt-get install -y --no-install-recommends git python3 make g++ ca-certificates curl sqlite3 procps && rm -rf /var/lib/apt/lists/*
 RUN npm install --global @openai/codex@0.161.0 @anthropic-ai/claude-code@2.1.293
+ENV COREPACK_HOME=/opt/corepack
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 WORKDIR /app
 COPY . .
