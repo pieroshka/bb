@@ -1,3 +1,4 @@
+import { executionIdentitySchema } from "../execution/contract";
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { idSchema } from "../shared/contract";
@@ -16,7 +17,13 @@ export const delegationRpcContract = defineRpcContract({
     output: z.object({ threadId: threadIdSchema }).strict(),
   },
   taskThreadsAttach: {
-    input: z.object({ taskId: idSchema, threadId: threadIdSchema }).strict(),
+    input: z
+      .object({
+        taskId: idSchema,
+        threadId: threadIdSchema,
+        execution: executionIdentitySchema.optional(),
+      })
+      .strict(),
     output: z.object({ threadId: threadIdSchema }).strict(),
   },
   taskThreadsDetach: {

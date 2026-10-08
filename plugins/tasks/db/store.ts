@@ -532,9 +532,10 @@ export function createTasksStore(db: PluginDatabase) {
     }
     if (ownId) {
       const hasChildren = db
-        .prepare<[string], { found: number }>(
-          "SELECT 1 AS found FROM folders WHERE parent_folder_id = ? LIMIT 1",
-        )
+        .prepare<
+          [string],
+          { found: number }
+        >("SELECT 1 AS found FROM folders WHERE parent_folder_id = ? LIMIT 1")
         .get(ownId);
       if (hasChildren) {
         throw new Error("A folder with children cannot be nested");
@@ -559,9 +560,10 @@ export function createTasksStore(db: PluginDatabase) {
 
   function listFolders(): Folder[] {
     return db
-      .prepare<[], FolderRow>(
-        "SELECT * FROM folders ORDER BY parent_folder_id IS NOT NULL, name COLLATE NOCASE, id",
-      )
+      .prepare<
+        [],
+        FolderRow
+      >("SELECT * FROM folders ORDER BY parent_folder_id IS NOT NULL, name COLLATE NOCASE, id")
       .all()
       .map(folderFromRow);
   }
@@ -650,23 +652,26 @@ export function createTasksStore(db: PluginDatabase) {
   function listProjects(folderId?: string | null): Project[] {
     if (folderId === undefined) {
       return db
-        .prepare<[], ProjectRow>(
-          "SELECT * FROM projects ORDER BY name COLLATE NOCASE, id",
-        )
+        .prepare<
+          [],
+          ProjectRow
+        >("SELECT * FROM projects ORDER BY name COLLATE NOCASE, id")
         .all()
         .map(projectFromRow);
     }
     const rows =
       folderId === null
         ? db
-            .prepare<[], ProjectRow>(
-              "SELECT * FROM projects WHERE folder_id IS NULL ORDER BY name COLLATE NOCASE, id",
-            )
+            .prepare<
+              [],
+              ProjectRow
+            >("SELECT * FROM projects WHERE folder_id IS NULL ORDER BY name COLLATE NOCASE, id")
             .all()
         : db
-            .prepare<[string], ProjectRow>(
-              "SELECT * FROM projects WHERE folder_id = ? ORDER BY name COLLATE NOCASE, id",
-            )
+            .prepare<
+              [string],
+              ProjectRow
+            >("SELECT * FROM projects WHERE folder_id = ? ORDER BY name COLLATE NOCASE, id")
             .all(folderId);
     return rows.map(projectFromRow);
   }
@@ -759,9 +764,10 @@ export function createTasksStore(db: PluginDatabase) {
     }
     if (ownId) {
       const hasChildren = db
-        .prepare<[string], { found: number }>(
-          "SELECT 1 AS found FROM tasks WHERE parent_task_id = ? LIMIT 1",
-        )
+        .prepare<
+          [string],
+          { found: number }
+        >("SELECT 1 AS found FROM tasks WHERE parent_task_id = ? LIMIT 1")
         .get(ownId);
       if (hasChildren) {
         throw new Error(
@@ -896,10 +902,14 @@ export function createTasksStore(db: PluginDatabase) {
       }
     }
     if (filters.activeOnly === true) {
-      clauses.push(`EXISTS (
+      clauses.push(`(EXISTS (
         SELECT 1 FROM task_threads tt
         WHERE tt.task_id = t.id AND tt.live_status IN ('starting', 'working')
-      )`);
+      ) OR EXISTS (
+        SELECT 1 FROM task_executions execution
+        WHERE execution.task_id = t.id AND execution.released_at IS NULL
+          AND json_extract(execution.data, '$.lastConfirmed.phase') IN ('pending', 'running')
+      ))`);
     }
     if (filters.parentTaskId !== undefined) {
       if (filters.parentTaskId === null) {
@@ -979,9 +989,10 @@ export function createTasksStore(db: PluginDatabase) {
 
     const readPage = db.transaction((): ListTasksPage => {
       const revision = db
-        .prepare<[], TaskListRevisionRow>(
-          "SELECT revision FROM task_list_revision WHERE id = 1",
-        )
+        .prepare<
+          [],
+          TaskListRevisionRow
+        >("SELECT revision FROM task_list_revision WHERE id = 1")
         .get()?.revision;
       if (revision === undefined) {
         throw new Error("Task-list revision state is unavailable");
@@ -1382,9 +1393,10 @@ export function createTasksStore(db: PluginDatabase) {
 
   function listLabels(projectId: string): Label[] {
     return db
-      .prepare<[string], LabelRow>(
-        "SELECT * FROM labels WHERE project_id = ? ORDER BY name COLLATE NOCASE, id",
-      )
+      .prepare<
+        [string],
+        LabelRow
+      >("SELECT * FROM labels WHERE project_id = ? ORDER BY name COLLATE NOCASE, id")
       .all(projectId)
       .map(labelFromRow);
   }
@@ -1430,18 +1442,19 @@ export function createTasksStore(db: PluginDatabase) {
   function removeTaskLabel(taskId: string, labelId: string): boolean {
     return (
       db
-        .prepare<[string, string]>(
-          "DELETE FROM task_labels WHERE task_id = ? AND label_id = ?",
-        )
+        .prepare<
+          [string, string]
+        >("DELETE FROM task_labels WHERE task_id = ? AND label_id = ?")
         .run(taskId, labelId).changes > 0
     );
   }
 
   function listTaskLabels(taskId: string): TaskLabel[] {
     return db
-      .prepare<[string], TaskLabelRow>(
-        "SELECT task_id, label_id FROM task_labels WHERE task_id = ? ORDER BY label_id",
-      )
+      .prepare<
+        [string],
+        TaskLabelRow
+      >("SELECT task_id, label_id FROM task_labels WHERE task_id = ? ORDER BY label_id")
       .all(taskId)
       .map(taskLabelFromRow);
   }
@@ -1824,9 +1837,10 @@ export function createTasksStore(db: PluginDatabase) {
 
   function listPresets(): Preset[] {
     return db
-      .prepare<[], PresetRow>(
-        "SELECT * FROM presets ORDER BY builtin DESC, name COLLATE NOCASE, id",
-      )
+      .prepare<
+        [],
+        PresetRow
+      >("SELECT * FROM presets ORDER BY builtin DESC, name COLLATE NOCASE, id")
       .all()
       .map(presetFromRow);
   }

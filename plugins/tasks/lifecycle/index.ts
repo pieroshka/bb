@@ -1,5 +1,9 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { publishCommentsChanged, type TasksApiStore } from "../api";
+import {
+  publishCommentsChanged,
+  publishTasksChanged,
+  type TasksApiStore,
+} from "../api";
 import type { TaskThread, TaskThreadLiveStatus } from "../db";
 import { createSystemComment, publishThreadsChanged } from "../delegate";
 import { errorMessage } from "../shared/errors";
@@ -143,8 +147,27 @@ export async function registerLifecycle(
     transitionTrackedThread(bb, store, thread.id, "failed");
   });
   bb.events.on("thread.deleted", ({ thread }) => {
+    for (const execution of store.executions.closeLocalThread(thread.id)) {
+      const task = store.tasks.getTask(execution.taskId);
+      if (task) publishTasksChanged(bb, task.id, task.projectId);
+    }
     transitionTrackedThread(bb, store, thread.id, "completed");
   });
 
   await reconcileTrackedThreads(bb, store);
+  for (const threadId of store.executions.localThreadsToReconcile()) {
+    try {
+      const thread = await bb.sdk.threads.get({ threadId });
+      if (thread.deletedAt !== null) {
+        for (const execution of store.executions.closeLocalThread(threadId)) {
+          const task = store.tasks.getTask(execution.taskId);
+          if (task) publishTasksChanged(bb, task.id, task.projectId);
+        }
+      }
+    } catch (error) {
+      bb.log.warn(
+        `Could not reconcile execution thread ${threadId}; ownership retained: ${errorMessage(error)}`,
+      );
+    }
+  }
 }

@@ -1,3 +1,4 @@
+import { ExecutionIndicator } from "../../execution/view";
 import {
   useEffect,
   useRef,
@@ -306,6 +307,7 @@ function TaskCard({
       <div className="flex items-center gap-1.5 text-2xs text-muted-foreground">
         <span className="tabular-nums">{task.key}</span>
         <WorkingAgentsChip threads={meta.workingThreads} />
+        <ExecutionIndicator task={task} />
       </div>
       <div className="mt-1 line-clamp-2 text-sm leading-snug font-medium">
         {task.title}

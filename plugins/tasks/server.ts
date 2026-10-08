@@ -1,3 +1,4 @@
+import { registerExecutions } from "./execution";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 
@@ -30,6 +31,7 @@ export default async function plugin(bb: BbPluginApi) {
   registerAttachments(bb, store.tasks);
   registerTasksCli(bb, store, statusPayload());
   registerDelegation(bb, store);
+  registerExecutions(bb, store);
   registerMentions(bb, store);
   await registerLifecycle(bb, store);
 

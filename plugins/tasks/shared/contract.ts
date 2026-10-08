@@ -1,3 +1,4 @@
+import { executionSummarySchema } from "../execution/contract";
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
@@ -130,6 +131,7 @@ const taskSchema = z
     createdAt: z.string(),
     updatedAt: z.string(),
     labelIds: z.array(idSchema),
+    execution: executionSummarySchema.optional(),
   })
   .strict();
 
