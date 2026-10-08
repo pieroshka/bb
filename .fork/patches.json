@@ -22,7 +22,8 @@
     {
       "id": "upstream-http-metadata",
       "upstreamBase": "129f621771a3e275773992db648316966ac207cf",
-      "contract": "docs/configuration.md#upstream-http-response-capture"
+      "contract": "docs/configuration.md#upstream-http-response-capture",
+      "commit": "bf4231be2c761d7bda96f327d793926272cf9707"
     }
   ]
 }
