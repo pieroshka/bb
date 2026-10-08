@@ -83,3 +83,10 @@ Focused verification:
 pnpm exec turbo run typecheck --filter=bb-plugin-tasks
 pnpm exec turbo run test --filter=bb-plugin-tasks -- execution/execution.test.ts delegate/delegate.test.ts
 ```
+
+Explicit manual attachment can add several real threads to the same native
+Tasks-owned local execution. Other execution owners still require their exact
+identity and authenticated caller. A deletion event retains the indexed mapping
+lookup and adds two fixed, thread-indexed execution settlement statements; this
+also closes a native reservation after its visible thread was detached. It does
+not scan the task population.

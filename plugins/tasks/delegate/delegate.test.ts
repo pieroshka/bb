@@ -2,7 +2,7 @@ import {
   createFakePluginHost,
   makeThreadResponse,
 } from "@get-bb/plugin-sdk/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createStore } from "../api";
 import type { Comment, Project, Task } from "../db";
 import { delegationRpcContract } from "./contract";
@@ -743,6 +743,74 @@ it("retains an uncertain producer delegation without a second spawn", async () =
     );
     expect(harness.sdk.callsTo("threads.spawn")).toHaveLength(1);
   } finally {
+    await harness.dispose();
+  }
+});
+
+it("admits only one spawn when identical producer requests overlap", async () => {
+  let releaseSpawn!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    releaseSpawn = resolve;
+  });
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "tasks",
+    sdk: {
+      threads: {
+        spawn: async () => {
+          await gate;
+          return { id: "thr_once" };
+        },
+        get: async () =>
+          makeThreadResponse({ id: "thr_once", status: "starting" }),
+      },
+    },
+  });
+  try {
+    const store = createStore(bb);
+    const project = store.tasks.createProject({
+      name: "Delivery",
+      prefix: "ONCE",
+      color: "blue",
+      linkedBbProjectId: "proj_test",
+    });
+    const task = store.tasks.createTask({
+      projectId: project.id,
+      title: "Concurrent assignment",
+    });
+    const preset = createTestPreset(store);
+    registerDelegation(bb, store);
+    const input = {
+      taskId: task.id,
+      presetId: preset.id,
+      assignmentId: crypto.randomUUID(),
+    };
+    const caller = {
+      experimental_caller: {
+        kind: "plugin" as const,
+        pluginId: "software-factory",
+      },
+    };
+    const first = harness.callRpc("delegate", input, caller);
+    const second = harness.callRpc("delegate", input, caller);
+    const resultsPromise = Promise.allSettled([first, second]);
+    await vi.waitFor(() =>
+      expect(harness.sdk.callsTo("threads.spawn")).toHaveLength(1),
+    );
+    releaseSpawn();
+    const results = await resultsPromise;
+    expect(
+      results.filter((result) => result.status === "fulfilled"),
+    ).toHaveLength(1);
+    expect(
+      results.filter((result) => result.status === "rejected"),
+    ).toHaveLength(1);
+    expect(harness.sdk.callsTo("threads.spawn")).toHaveLength(1);
+    expect(await harness.callRpc("delegate", input, caller)).toEqual({
+      threadId: "thr_once",
+    });
+    expect(harness.sdk.callsTo("threads.spawn")).toHaveLength(1);
+  } finally {
+    releaseSpawn();
     await harness.dispose();
   }
 });

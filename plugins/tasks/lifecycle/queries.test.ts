@@ -110,7 +110,7 @@ describe("lifecycle SQL scope", () => {
     [200, 200],
     [501, 501],
   ])(
-    "uses one lookup per unrelated event with %i tasks and %i mappings",
+    "uses one mapping lookup per event plus bounded indexed execution settlement with %i tasks and %i mappings",
     async (tasks, mappings) => {
       const f = fixture(tasks, mappings);
       try {
@@ -118,9 +118,13 @@ describe("lifecycle SQL scope", () => {
         f.queries.length = 0;
         await emitAllEvents(f, "thr_unrelated");
         expect(f.harness.realtimeSignals).toEqual([]);
-        expect(f.queries).toHaveLength(5);
+        expect(f.queries).toHaveLength(7);
         expect(
-          f.queries.every((q) => q.sql.includes("WHERE thread_id = ?")),
+          f.queries.every(
+            (q) =>
+              q.sql.includes("WHERE thread_id = ?") ||
+              q.sql.includes("WHERE t.thread_id = ?"),
+          ),
         ).toBe(true);
       } finally {
         await f.dispose();
@@ -168,7 +172,9 @@ describe("lifecycle SQL scope", () => {
               error: "failed",
             });
           else await f.harness.emitThreadEvent("thread.deleted", { thread });
-          expect(f.queries).toHaveLength(1 + count * statementsPerMapping);
+          expect(f.queries).toHaveLength(
+            1 + count * statementsPerMapping + (status === "deleted" ? 2 : 0),
+          );
           expect(f.harness.realtimeSignals.length - signalsBefore).toBe(
             statementsPerMapping === 0 ? 0 : count * 2,
           );
@@ -279,9 +285,10 @@ describe("lifecycle SQL scope", () => {
     try {
       expect(f.db.pragma("foreign_keys", { simple: true })).toBe(1);
       const plan = f.db
-        .prepare<[], { detail: string }>(
-          "EXPLAIN QUERY PLAN SELECT * FROM task_threads WHERE thread_id = 'thr_worker_0' ORDER BY task_id, id",
-        )
+        .prepare<
+          [],
+          { detail: string }
+        >("EXPLAIN QUERY PLAN SELECT * FROM task_threads WHERE thread_id = 'thr_worker_0' ORDER BY task_id, id")
         .all();
       expect(
         plan.some((row) =>
@@ -295,7 +302,7 @@ describe("lifecycle SQL scope", () => {
       await registerLifecycle(f.bb, f.store);
       f.queries.length = 0;
       await emitAllEvents(f, "thr_worker_0");
-      expect(f.queries).toHaveLength(5);
+      expect(f.queries).toHaveLength(7);
       expect(f.harness.realtimeSignals).toEqual([]);
     } finally {
       await f.dispose();

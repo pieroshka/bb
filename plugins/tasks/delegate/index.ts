@@ -395,6 +395,18 @@ export function handlers(
           `Task execution is reserved by ${held.backendId}; reconcile that assignment before delegating`,
         );
       const environment = await presetSpawnEnvironment(bb, preset);
+      // Environment lookup yields; a concurrent identical request may have reserved
+      // or finished meanwhile. Only this synchronous creation path may spawn.
+      const concurrent = store.executions.active(task.id);
+      const retained =
+        input.assignmentId &&
+        store.executions
+          .history(task.id)
+          .some((item) => item.assignmentId === input.assignmentId);
+      if (concurrent || retained)
+        throw new Error(
+          "Task execution is reserved; retry observation of the retained delegation instead of spawning again",
+        );
       const reservation = store.executions.reserve({
         snapshot,
         ownerPluginId: "tasks",
@@ -521,10 +533,7 @@ export function handlers(
         if (reservation.taskId !== task.id)
           throw new Error("Execution belongs to another task");
       } else if (held) {
-        if (
-          held.ownerPluginId !== "tasks" ||
-          !held.localThreadIds.includes(thread.id)
-        )
+        if (held.ownerPluginId !== "tasks" || held.backendId !== "local-tasks")
           throw new Error(
             "Task execution is reserved; attach requires its owner and immutable execution identity",
           );
