@@ -668,6 +668,14 @@ export class PiRpcSession {
 
   private handleChannelMessage(message: Record<string, unknown>): void {
     const child = this.child;
+    if (message.kind === "http-response") {
+      this.onEvent({
+        type: "bb_http_response",
+        status: message.status,
+        headers: message.headers,
+      });
+      return;
+    }
     if (message.kind === "ready") {
       this.ready.resolve();
       return;

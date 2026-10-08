@@ -15,7 +15,11 @@
     ".fork/deployment.smoke.mjs",
     ".fork/branding.mjs",
     ".fork/service.mjs",
-    ".fork/adoption.smoke.mjs"
+    ".fork/adoption.smoke.mjs",
+    "packages/domain/src/provider-http.ts",
+    "packages/agent-runtime/src/upstream-http-gateway.ts",
+    "packages/agent-runtime/src/upstream-http-capture.ts",
+    "packages/agent-runtime/src/integration.http-capture.test.ts"
   ],
   "tracking": "stable-release",
   "buildMetadata": "emi"

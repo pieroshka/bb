@@ -1,3 +1,5 @@
+import { groupHostDaemonEvents } from "@bb/host-daemon-contract";
+import { internalAuthHeaders } from "../../helpers/commands.js";
 import { getLatestThreadSequence } from "@bb/db";
 import { emitPluginThreadEvents } from "../../../src/services/plugins/plugin-thread-events.js";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -18,6 +20,7 @@ import {
 import { createUserQuestionPayload } from "../../helpers/pending-interactions.js";
 import {
   createTestAppHarness,
+  startTestServer,
   testLogger,
   type TestAppHarness,
 } from "../../helpers/test-app.js";
@@ -45,11 +48,14 @@ interface RecordedInteractionPayload extends RecordedThreadPayload {
 
 const globals = globalThis as Record<string, unknown>;
 
-async function setUpPluginHarness(serverSource: string): Promise<{
+async function setUpPluginHarness(
+  serverSource: string,
+  existingHarness?: TestAppHarness,
+): Promise<{
   harness: TestAppHarness;
   cleanup(): Promise<void>;
 }> {
-  const harness = await createTestAppHarness();
+  const harness = existingHarness ?? (await createTestAppHarness());
   const workDir = await mkdtemp(join(tmpdir(), "bb-plugin-events-"));
   const rootDir = join(workDir, "bb-plugin-observer");
   await mkdir(rootDir, { recursive: true });
@@ -723,6 +729,98 @@ it("coalesces thread appends and delivers current status without reading history
   } finally {
     vi.useRealTimers();
     delete globals.__sequenceEvents;
+    await cleanup();
+  }
+});
+
+it("delivers upstream HTTP metadata to plugins after persistence and exposes identical history through the API", async () => {
+  const recorded: unknown[] = [];
+  globals.__httpEvents = recorded;
+  const server = await startTestServer();
+  server.pluginService.bindSdk({ baseUrl: server.baseUrl });
+  const { harness, cleanup } = await setUpPluginHarness(
+    `
+    export default function plugin(bb: any) {
+      bb.events.on("experimental_provider.http", async (payload: any) => {
+        const history = await bb.sdk.threads.events.list({ threadId: payload.thread.id });
+        (globalThis as any).__httpEvents.push({ payload, history });
+      });
+    }
+  `,
+    { ...server, cleanup: () => server.close() },
+  );
+  try {
+    const { session, thread } = seedThreadFixture(harness, {
+      thread: { status: "active" },
+    });
+    const metadata = {
+      kind: "response" as const,
+      requestId: "http-test-1",
+      clientRequestId: "creq_222222222x",
+      turnId: null,
+      requestNumber: 1,
+      method: "POST",
+      origin: "https://upstream.example",
+      source: "gateway" as const,
+      status: 429,
+      receivedAt: Date.now(),
+      headers: {
+        entries: [
+          { name: "retry-after", value: "7" },
+          { name: "x-custom-quota", value: "42" },
+        ],
+        redacted: ["set-cookie"],
+        truncated: false,
+      },
+    };
+    const response = await harness.app.request("/internal/session/events", {
+      method: "POST",
+      headers: internalAuthHeaders(harness),
+      body: JSON.stringify({
+        sessionId: session.id,
+        eventGroups: groupHostDaemonEvents([
+          {
+            threadId: thread.id,
+            event: {
+              type: "provider/http",
+              threadId: thread.id,
+              providerId: "custom",
+              scope: threadScope(),
+              metadata,
+            },
+          },
+        ]),
+      }),
+    });
+    expect(response.status).toBe(200);
+    await vi.waitFor(() => expect(recorded).toHaveLength(1));
+    expect(recorded[0]).toMatchObject({
+      payload: {
+        thread: { id: thread.id },
+        event: { type: "provider/http", metadata },
+      },
+      history: expect.arrayContaining([
+        expect.objectContaining({
+          type: "provider/http",
+          data: expect.objectContaining({ metadata }),
+        }),
+      ]),
+    });
+    const history = await harness.app.request(
+      `/api/v1/threads/${thread.id}/events`,
+    );
+    expect(history.status).toBe(200);
+    expect(await history.json()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "provider/http",
+          data: expect.objectContaining({ metadata }),
+        }),
+      ]),
+    );
+    expect(recorded).toHaveLength(1);
+  } finally {
+    delete globals.__httpEvents;
     await cleanup();
   }
 });

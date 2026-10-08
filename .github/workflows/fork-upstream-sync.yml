@@ -82,6 +82,7 @@ jobs:
       - name: Verify isolated container boot and rollback before promotion
         run: |
           docker build -t bb-fork-ci -f .fork/container/Dockerfile .
+          docker run --rm --network none --memory 5g --cpus 4 --entrypoint pnpm bb-fork-ci exec turbo run test test:integration --filter=@bb/agent-runtime --force -- upstream-http-capture.test.ts integration.http-capture.test.ts
           docker run --rm --network none --memory 5g --cpus 4 --entrypoint node bb-fork-ci .fork/deployment.smoke.mjs
 
   promote:

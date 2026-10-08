@@ -3686,3 +3686,22 @@ with third-party providers.
 `bb.sdk.experimental_promptHistory.list({ cursor?, limit?, signal? })` returns `{ entries, nextCursor }`: every accepted user prompt across projects and threads, newest first, each with `id`, `createdAt`, `input`, `projectId`, and `threadId`. `limit` is a digit string, defaulting to 100 and capped at 1000. `nextCursor` is an opaque string, or null on the last page. A page can hold fewer than `limit` entries while `nextCursor` is set, because stored rows whose input no longer parses are skipped. Prompts from a deleted thread remain listed until the thread row is removed, which cascades to its prompt history. The same route backs `bb prompt-history list`.
 
 Before stabilization, audit whether `limit` should be a number, whether the cursor format needs versioning, whether project or thread filters belong on this call rather than on `projects.promptHistory` and `threads.promptHistory`, and whether skipped rows should fill the page.
+
+## Upstream HTTP response metadata
+
+`bb.events.on("experimental_provider.http", handler)` observes persisted
+`provider/http` events with the current thread DTO and typed response, completion,
+or capture-availability metadata. Delivery is observe-only and not replayed;
+SDK event history is the replay surface. Headers retain arbitrary names and
+available duplicates, with bounded values, explicit truncation, and credential
+redaction. HTTP request IDs and dispatch/turn correlation are separate from
+provider logical retry counts.
+
+The provider bridge exports `experimental_providerHttpResponse`, which validates
+native response notifications, and `experimental_upstreamHttpUrl`, which routes
+an HTTP(S) endpoint through the per-thread `BB_UPSTREAM_GATEWAY` capability URL.
+Native reports are sanitized again at the runtime boundary. Stabilization needs
+real-provider transport coverage, retry/abort/WebSocket behavior, plugin replay,
+thread isolation and disposal, and validation against future provider endpoint
+configuration changes. A harness that cannot expose or route its network traffic
+must report unavailable capture; protocol compatibility is not capture support.

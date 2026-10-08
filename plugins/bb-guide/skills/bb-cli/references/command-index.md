@@ -359,3 +359,6 @@ Standalone `bb machine create` machines remain until explicitly removed.
 To enroll an existing machine, run `bb machine create --provider manual`, then
 run its printed enrollment command on the target. The CLI waits until the daemon
 connects. With `--no-wait`, it returns the creating host ID immediately.
+
+`bb thread log THREAD --json --all` also includes `provider/http` response metadata
+(status, bounded headers, capture source, and request/dispatch correlation).

@@ -1945,3 +1945,65 @@ HTTP/WebSocket admission, queued dispatch and background services while readines
 and rollback checks run. Failed startup restores the pre-activation runtime and
 offline data snapshot; recovery after activation preserves accepted work and never
 silently restores an older database. Do not create or delete this marker manually.
+
+## Upstream HTTP response capture
+
+Plugins receive `experimental_provider.http` events containing the thread and a
+`provider/http` event. The same events are stored in thread history and available
+through `sdk.threads.events.list({ threadId })`, `GET /api/v1/threads/:id/events`,
+and `bb thread log THREAD --json --all`. Live listeners are observe-only; use
+history and its sequence cursor to recover events missed during plugin reload.
+
+Pi forwards its native `after_provider_response` hook automatically where the
+installed CLI exposes it. Enable gateway capture for error responses the native
+hook does not expose. For harnesses
+that hide headers, set `BB_UPSTREAM_CAPTURE=1` in Machine Environment, globally,
+per machine, or per project. For example:
+
+```sh
+printf '%s' 1 | bb machine env set BB_UPSTREAM_CAPTURE --project PROJECT
+```
+
+Claude Code's Anthropic endpoint, Codex's effective API/ChatGPT endpoints, and
+Pi's selected model endpoint are
+routed through an authenticated, per-thread loopback gateway. It preserves request
+credentials, streams response bodies without buffering or decompression, and
+forwards cancellation. Capture does not change a provider's retry policy. Every
+HTTP exchange receives its own request ID and request number; the client dispatch
+ID and provider turn ID (when known at request start) correlate it with BB work.
+A request number counts exchanges, not logical retries, because several model
+requests can belong to one turn.
+
+ACP and custom harnesses can use `BB_UPSTREAM_ENDPOINTS`, a JSON object mapping
+endpoint environment names to original HTTP(S) base URLs, together with capture:
+
+```sh
+printf '%s' '{"CUSTOM_API_URL":"https://api.example.com/v1"}' | bb machine env set BB_UPSTREAM_ENDPOINTS --project PROJECT
+```
+
+The runtime replaces those endpoint values with gateway URLs before launching the
+harness. The harness must actually use those endpoint variables. Custom bridges
+can instead use the experimental native response helper or route their own
+endpoint with the experimental gateway helper documented in the Plugin Guide.
+Opaque transports, AWS/Vertex-specific authentication, and agents that ignore
+endpoint overrides require native integration; BB reports unavailable capture
+when no response is observed rather than fabricating headers. The gateway is not
+an HTTP CONNECT proxy or a system-wide TLS interception service.
+
+Response metadata includes status, all header names (not just a rate-limit
+allowlist), duplicate header entries when the transport exposes them, redacted
+names, and explicit truncation. Cookie, authentication, API-key, authentication-token, secret,
+and credential headers are redacted from metadata but forwarded to the client.
+Headers are bounded to 256 entries and 32 KiB of serialized entries, with 8 KiB
+per value. Token-count and quota headers remain available. No request headers,
+request/response bodies, or request URL paths and queries are recorded. Native harness hooks may already combine duplicates
+and may not expose the method, origin, or end of stream; those facts remain
+unknown. Gateway events distinguish headers received from stream completion,
+abort, and transport failure. Failures before any response have no HTTP status.
+Same-origin redirects remain captured. Cross-origin redirects leave the gateway
+to preserve the client’s credential-stripping rules and emit an explicit capture
+unavailability event.
+
+Existing sessions apply configuration on the next dispatch; existing terminals
+keep their launch environment. Remove `BB_UPSTREAM_CAPTURE` to stop configuring
+new gateway traffic. Host daemons require protocol 228 for these events.

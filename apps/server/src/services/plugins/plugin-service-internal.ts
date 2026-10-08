@@ -209,6 +209,9 @@ export type PluginMentionResolveResult =
   | { ok: false; error: string };
 
 export interface PluginThreadEventEmitter {
+  emitProviderHttp(
+    event: Extract<import("@bb/domain").ThreadEvent, { type: "provider/http" }>,
+  ): void;
   emitThreadEvents(threadId: string): void;
   emitTerminalInput(
     terminal: import("@bb/server-contract").TerminalSession,

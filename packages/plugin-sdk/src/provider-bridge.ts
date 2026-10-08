@@ -424,3 +424,8 @@ export {
   type ContextCategory,
   type ContextEntry,
 } from "@bb/domain";
+
+export {
+  experimental_upstreamHttpUrl,
+  experimental_providerHttpResponse,
+} from "@bb/provider-bridge-protocol/bridge-kit";

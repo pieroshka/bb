@@ -8,3 +8,5 @@ pnpm exec turbo run test --filter=@bb/cli --output-logs=errors-only -- host-mach
 pnpm exec turbo run test --filter=@bb/sdk --output-logs=errors-only -- public-types.test.ts
 pnpm exec turbo run test --filter=@bb/db --output-logs=errors-only
 pnpm exec turbo run test --filter=bb-plugin-provider-claude-code --output-logs=errors-only -- provider-maintenance.credentials.test.ts
+pnpm exec turbo run test --filter=@bb/agent-runtime --output-logs=errors-only -- upstream-http-capture.test.ts
+pnpm exec turbo run test --filter=@bb/server --output-logs=errors-only -- plugin-thread-events.test.ts plugin-authoring-docs.test.ts --testTimeout=30000

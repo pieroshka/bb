@@ -141,6 +141,11 @@ const threadEventScopeDefinitionByType = {
     rationale:
       "Subscription usage is account-scoped state that can affect multiple turns and threads.",
   },
+  "provider/http": {
+    policy: "thread",
+    rationale:
+      "HTTP attempts can begin before a provider turn and finish after it; correlation is captured separately at request start.",
+  },
   "provider.env-resolved": {
     policy: "thread",
     rationale:

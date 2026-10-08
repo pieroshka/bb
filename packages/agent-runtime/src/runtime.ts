@@ -1,3 +1,5 @@
+import { UpstreamHttpCapture } from "./upstream-http-capture.js";
+import { nativeHttpResponseSchema } from "@bb/provider-bridge-protocol/bridge-kit";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { z } from "zod";
@@ -309,6 +311,7 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
   const toolCalls = new RuntimeToolCalls();
   const backgroundWorkState = new RuntimeBackgroundWorkState();
   const threadEventGrammar = new ThreadEventGrammar();
+  const httpCapture = new UpstreamHttpCapture(options.onEvent);
   const bridgeNodeEnv = defaultBridgeNodeEnv();
 
   const providerProcesses = new RuntimeProviderProcessManager({
@@ -331,6 +334,7 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
       handleStdoutLine(args.line, args.providerProcess),
     onProcessExit: options.onProcessExit,
     onProviderThreadDetached: (threadId) => {
+      void httpCapture.release(threadId);
       toolCalls.cancelThread(threadId);
       threadIdentityRegistry.clearThread(threadId);
       clearThreadRuntimeConfig(threadId);
@@ -451,7 +455,7 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
       request: {
         child: args.proc.child,
         getNextId: () => nextRequestId++,
-        message: args.message,
+        message: await httpCapture.prepare(args.proc.providerId, args.message),
         pending: args.proc.pending,
         resultSchema: args.resultSchema,
         ...(args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {}),
@@ -809,6 +813,7 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
     providerState: RuntimeProviderProcess["identity"],
     threadId: string,
   ): void {
+    void httpCapture.release(threadId);
     threadIdentityRegistry.forgetThread({
       providerState,
       threadId,
@@ -1257,6 +1262,7 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
       ) {
         toolCalls.cancelThread(targetThreadId, normalizedEvent.scope.turnId);
       }
+      httpCapture.observe(normalizedEvent);
       turnState.observe(normalizedEvent);
       backgroundWorkState.observe(normalizedEvent);
       observeProviderSessionIdleState(normalizedEvent);
@@ -1266,6 +1272,25 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
   }
 
   function handleProviderNotification(args: RuntimeParsedMessageArgs): void {
+    if (args.parsed.method === "experimental/provider/http") {
+      const parsed = nativeHttpResponseSchema.safeParse(args.parsed.params);
+      if (parsed.success) {
+        const threadId = threadIdentityRegistry.resolveProviderEventThreadId({
+          eventThreadId: parsed.data.threadId,
+          providerState: args.proc.identity,
+          sourceThreadId: undefined,
+        });
+        if (threadId)
+          httpCapture.native(
+            threadId,
+            args.proc.providerId,
+            parsed.data.status,
+            parsed.data.headers,
+            parsed.data.truncated,
+          );
+      }
+      return;
+    }
     if (args.parsed.method === PROVIDER_TOOL_CALL_CANCELLED_METHOD) {
       const cancellation = providerToolCallCancellationSchema.safeParse(
         args.parsed.params,
@@ -2574,6 +2599,7 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
       backgroundWorkState.clear();
       threadEventGrammar.clear();
       await providerProcesses.shutdown();
+      await httpCapture.close();
     },
   };
 

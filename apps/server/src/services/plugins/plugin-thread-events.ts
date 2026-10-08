@@ -112,3 +112,9 @@ export function emitPluginTerminalInput(
 export function emitPluginHostDeleted(host: HostRow): void {
   emitter?.emitHostDeleted(host);
 }
+
+export function emitPluginProviderHttp(
+  event: Extract<import("@bb/domain").ThreadEvent, { type: "provider/http" }>,
+): void {
+  emitter?.emitProviderHttp(event);
+}

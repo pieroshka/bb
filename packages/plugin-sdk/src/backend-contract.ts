@@ -265,6 +265,10 @@ export interface PluginTurnFailedEvent {
  * queued row GET /threads/:id/queued-messages serves.
  */
 export interface PluginThreadEventPayloads {
+  "experimental_provider.http": {
+    thread: ThreadResponse;
+    event: Extract<import("@bb/domain").ThreadEvent, { type: "provider/http" }>;
+  };
   /** Debounced per thread (at most once per second), with the latest sequence and current thread DTO. Reading history does not emit this event. */
   "experimental_thread.events": { thread: ThreadResponse; sequence: number };
   /** Real accepted terminal input; excludes output, keepalives and input contents. */

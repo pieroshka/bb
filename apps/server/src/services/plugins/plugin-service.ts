@@ -1314,6 +1314,14 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
     },
 
     events: {
+      emitProviderHttp(event) {
+        emitThreadEvent("experimental_provider.http", () => {
+          const thread = getThread(deps.db, event.threadId);
+          return thread === null
+            ? null
+            : { thread: buildThreadDto(thread), event };
+        });
+      },
       emitThreadEvents(threadId) {
         emitThreadEvent("experimental_thread.events", () => {
           const thread = getThread(deps.db, threadId);

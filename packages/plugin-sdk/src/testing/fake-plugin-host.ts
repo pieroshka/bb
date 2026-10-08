@@ -1127,6 +1127,7 @@ function createFakePluginHostInternal(
     [E in PluginThreadEventName]: Array<PluginThreadEventHandler<E>>;
   } = {
     "experimental_thread.events": [],
+    "experimental_provider.http": [],
     "experimental_terminal.input": [],
     "experimental_host.deleted": [],
     "thread.created": [],
@@ -1631,6 +1632,8 @@ function createFakePluginHostInternal(
       },
       get threadEventHandlers() {
         return {
+          "experimental_provider.http":
+            threadEventHandlers["experimental_provider.http"].length,
           "experimental_thread.events":
             threadEventHandlers["experimental_thread.events"].length,
           "experimental_terminal.input":

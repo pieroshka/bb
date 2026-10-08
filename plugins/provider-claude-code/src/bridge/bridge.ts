@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { ClaudeContextUsageCollector } from "./context-usage.js";
 
 import {
@@ -27,6 +29,7 @@ import {
   withoutBridgeRuntimeEnv,
   type BridgeToolCallRequest,
   experimental_defineProviderBridge,
+  experimental_upstreamHttpUrl,
 } from "@get-bb/plugin-sdk/provider-bridge";
 import { randomUUID } from "node:crypto";
 import { join as joinPath, resolve as resolvePath } from "node:path";
@@ -1546,12 +1549,47 @@ async function closeClaudeThreadSession(
 
 function buildSessionEnv(
   envOverrides: Record<string, string>,
+  cwd: string,
 ): NodeJS.ProcessEnv {
   const sessionEnv: NodeJS.ProcessEnv = {
     ...withoutBridgeRuntimeEnv(process.env),
     ...envOverrides,
     CLAUDE_CODE_ENTRYPOINT: "cli",
   };
+  if (sessionEnv.BB_UPSTREAM_GATEWAY) {
+    let configuredBaseUrl: string | undefined;
+    const configDir =
+      sessionEnv.CLAUDE_CONFIG_DIR?.replace(/^~(?=\/|$)/, homedir()) ??
+      resolvePath(sessionEnv.HOME ?? homedir(), ".claude");
+    for (const settingsPath of [
+      resolvePath(configDir, "settings.json"),
+      resolvePath(cwd, ".claude/settings.json"),
+      resolvePath(cwd, ".claude/settings.local.json"),
+    ]) {
+      try {
+        const settings = z
+          .object({
+            env: z
+              .object({ ANTHROPIC_BASE_URL: z.string().optional() })
+              .optional(),
+          })
+          .parse(JSON.parse(readFileSync(settingsPath, "utf8")));
+        configuredBaseUrl =
+          settings.env?.ANTHROPIC_BASE_URL || configuredBaseUrl;
+      } catch {
+        continue;
+      }
+    }
+    const endpoint =
+      configuredBaseUrl ||
+      sessionEnv.ANTHROPIC_BASE_URL ||
+      "https://api.anthropic.com";
+    sessionEnv.ANTHROPIC_BASE_URL = endpoint.startsWith(
+      sessionEnv.BB_UPSTREAM_GATEWAY + "/",
+    )
+      ? endpoint
+      : experimental_upstreamHttpUrl(sessionEnv.BB_UPSTREAM_GATEWAY, endpoint);
+  }
   delete sessionEnv.CLAUDE_AGENT_SDK_CLIENT_APP;
   return sessionEnv;
 }
@@ -1589,7 +1627,10 @@ function applyTurnEnvironment(
     config,
   };
   attachment.sessionOptions.env = {
-    ...buildSessionEnv(envOverrides),
+    ...buildSessionEnv(
+      envOverrides,
+      attachment.sessionConstructionConfig.sessionOptions.cwd,
+    ),
     CLAUDE_CODE_DISABLE_1M_CONTEXT: attachment.sessionConstructionConfig
       .sessionOptions.disable1MContext
       ? "1"
@@ -2147,7 +2188,10 @@ function attachThreadSession(
   resume: boolean,
 ): void {
   const threadIdRef = { current: params.threadId };
-  const env = buildSessionEnv(readConfigEnvOverrides(params.config));
+  const env = buildSessionEnv(
+    readConfigEnvOverrides(params.config),
+    params.cwd,
+  );
   const sessionOptions = buildTrackedSessionOptions(params, env, threadIdRef);
   if (!resume) {
     sessionOptions.sessionId = providerThreadId;

@@ -918,6 +918,8 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
           "Register handlers before one startup reconciliation because unloaded events are not replayed; avoid polling thread state to detect lifecycle changes",
           "Subscribe to messages being queued behind a wait, dispatching when it clears, or being cancelled before dispatch",
           "Subscribe when a thread receives a pending interaction",
+          "Observe experimental_provider.http with thread and event: actual upstream status and all bounded response headers, credential redaction, request/dispatch/turn correlation, stream completion or failure, and explicit unavailable capture; replay provider/http through sdk.threads.events.list",
+          "Provider bridges report native responses with experimental_providerHttpResponse or route configurable HTTP(S) endpoints using experimental_upstreamHttpUrl and the per-thread BB_UPSTREAM_GATEWAY capability; BB_UPSTREAM_CAPTURE=1 enables the gateway",
           "Observe debounced experimental_thread.events notifications with the latest sequence and current thread, or experimental_terminal.input without keystroke contents",
           "Observe experimental_host.deleted when a machine is removed, to drop state kept for that machine",
           "Subscribe to a turn failing, with the provider's error and rate-limit windows attached",
@@ -927,6 +929,8 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
           "PluginEvents",
           "PluginThreadEventPayloads",
           "PluginTurnFailedEvent",
+          "experimental_providerHttpResponse",
+          "experimental_upstreamHttpUrl",
         ],
         firstParty: [
           "Automations",

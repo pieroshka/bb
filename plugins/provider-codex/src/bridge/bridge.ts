@@ -7,6 +7,7 @@ import {
   userQuestionInteractionOutcomeSchema,
   type DynamicTool,
   type PromptInput,
+  experimental_upstreamHttpUrl,
   type ThreadDelta,
   type ProviderRateLimitState,
   sanitizeInheritedChildProcessEnv,
@@ -1180,6 +1181,46 @@ async function constructThreadSession(
       instructionMode: args.instructionMode,
       options: decoded.sessionOptions,
     });
+    const captureConfig: Record<string, string> = {};
+    const gateway = decoded.sessionOptions.envVars?.BB_UPSTREAM_GATEWAY;
+    if (gateway) {
+      const settings = await connection.request({
+        method: "config/read",
+        params: { includeLayers: false, cwd: args.cwd },
+        resultSchema: z.object({
+          config: z
+            .object({
+              model_provider: z.string().nullish(),
+              openai_base_url: z.string().nullish(),
+              chatgpt_base_url: z.string().nullish(),
+              model_providers: z
+                .record(
+                  z.string(),
+                  z.object({ base_url: z.string().nullish() }).passthrough(),
+                )
+                .optional(),
+            })
+            .passthrough(),
+        }),
+      });
+      const selected = settings.config.model_provider ?? "openai";
+      const endpoint =
+        settings.config.model_providers?.[selected]?.base_url ??
+        settings.config.openai_base_url ??
+        decoded.sessionOptions.envVars?.OPENAI_BASE_URL ??
+        "https://api.openai.com/v1";
+      const route = (url: string) =>
+        url.startsWith(gateway + "/")
+          ? url
+          : experimental_upstreamHttpUrl(gateway, url);
+      if (selected !== "openai")
+        captureConfig["model_providers." + selected + ".base_url"] =
+          route(endpoint);
+      captureConfig.openai_base_url = route(endpoint);
+      captureConfig.chatgpt_base_url = route(
+        settings.config.chatgpt_base_url ?? "https://chatgpt.com/backend-api",
+      );
+    }
     const sharedConstructionParams = {
       approvalPolicy: preparedGitRoots.permissionSettings.approvalPolicy,
       approvalsReviewer: preparedGitRoots.permissionSettings.approvalsReviewer,
@@ -1188,7 +1229,9 @@ async function constructThreadSession(
       ...instructionOverrides,
       model: decoded.sessionOptions.model ?? undefined,
       serviceTier: toCodexServiceTier(decoded.sessionOptions.serviceTier),
-      config: preparedGitRoots.config ?? undefined,
+      config: gateway
+        ? { ...preparedGitRoots.config, ...captureConfig }
+        : (preparedGitRoots.config ?? undefined),
       ...(dynamicTools && dynamicTools.length > 0 ? { dynamicTools } : {}),
     };
 

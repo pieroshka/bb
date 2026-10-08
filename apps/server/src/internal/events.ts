@@ -1,3 +1,4 @@
+import { emitPluginProviderHttp } from "../services/plugins/plugin-thread-events.js";
 import { Buffer } from "node:buffer";
 import { and, desc, eq, gt, lt, sql } from "drizzle-orm";
 import {
@@ -255,6 +256,7 @@ function resolveProviderIdentifiers(event: HostDaemonEventEnvelope["event"]): {
   providerThreadId: string | null;
 } {
   switch (event.type) {
+    case "provider/http":
     case "thread/started":
     case "client/thread/start":
     case "client/turn/requested":
@@ -389,6 +391,7 @@ async function applyEventEffects(
   for (const entry of events) {
     try {
       const event = entry.event;
+      if (event.type === "provider/http") emitPluginProviderHttp(event);
       if (event.type === "turn/started") {
         const turnId = requireThreadEventScopeTurnId({
           type: event.type,

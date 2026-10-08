@@ -15,7 +15,13 @@ No production directory, credentials, SSH agent, Docker socket or host checkout 
 mounted into the runtime. Container logs are bounded. The container has no model
 credentials and therefore is not proof of authenticated inference through every
 harness. Core and all four native provider adapters are built and typechecked by
-`.fork/verify.sh`; their transport integration requires separate behavioral tests.
+`.fork/verify.sh`. The container installs pinned Codex and Claude CLIs, uses the
+locked Pi CLI, and tests real provider bridges against loopback HTTP fixtures
+with dummy credentials and external networking disabled. ACP uses a protocol
+fixture through the real ACP bridge and an explicitly configured endpoint.
+The transport gate covers success, throttling, faults, streaming, cancellation,
+trailers, redirects, WebSockets, redaction and thread isolation. Plugin tests
+verify live delivery after persistence and SDK/API replay.
 
 `node .fork/deployment.smoke.mjs` runs an actual BB server in a disposable directory.
 The probe uses the full server-plus-daemon launcher. It injects a failed candidate that modifies SQLite then exits, verifies rollback
@@ -120,9 +126,9 @@ Linux test. No provider credentials are required or copied by these fresh tests.
 
 - Before each production adoption, test the production-data clone in a network-isolated container.
 - Confirm all active work is idle before the service can adopt the production installation.
-- Provide actual HTTP response metadata capture for every supported harness, using
-  native metadata or an authenticated opt-in gateway where headers are hidden.
-  Do not fabricate absent headers or claim compilation proves inference behavior.
+- Enable `BB_UPSTREAM_CAPTURE=1` through Machine Environment for instances that
+  need HTTP metadata. Custom/ACP harnesses must honor their `BB_UPSTREAM_ENDPOINTS`
+  mapping or implement native reporting. See [capture configuration](../docs/configuration.md#upstream-http-response-capture) for coverage and explicit unavailable cases.
 
 ## Fork version identity
 

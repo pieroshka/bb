@@ -1,3 +1,4 @@
+import { providerHttpMetadataSchema } from "./provider-http.js";
 import { contextSnapshotSchema } from "./context-snapshot.js";
 import { z } from "zod";
 import {
@@ -636,6 +637,12 @@ const unscopedProviderEventSchema = z.discriminatedUnion("type", [
     threadId: z.string(),
     providerThreadId: z.string(),
     rateLimits: providerRateLimitStateSchema,
+  }),
+  z.object({
+    type: z.literal("provider/http"),
+    threadId: z.string(),
+    providerId: z.string(),
+    metadata: providerHttpMetadataSchema,
   }),
   z.object({
     type: z.literal("provider.env-resolved"),

@@ -420,3 +420,6 @@ Context breakdowns are optional snapshots on `contextWindow` deltas:
 - `AcpToolCallUpdateEvent`
 - `AcpToolIdentity`
 - `AcpToolKind`
+
+- `experimental_providerHttpResponse`: emit bounded, redacted upstream response metadata before bridge recording.
+- `experimental_upstreamHttpUrl`: route an HTTP(S) endpoint through `BB_UPSTREAM_GATEWAY`.

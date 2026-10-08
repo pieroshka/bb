@@ -468,3 +468,15 @@ Fork-managed source runtimes can use the external operator described in
 updates while threads or terminals are running. A failed pre-activation update
 restores its prior runtime and data snapshot; post-activation recovery must
 preserve accepted work. Do not modify the private `.fork-maintenance` marker.
+
+### Upstream response headers
+
+`BB_UPSTREAM_CAPTURE=1` enables per-thread HTTP response capture through a local
+gateway for Claude and Codex. Set it using `bb machine env set` with optional
+`--machine` or `--project`. Pi also reports native response metadata. ACP/custom
+agents can map configurable endpoints with `BB_UPSTREAM_ENDPOINTS` (JSON mapping
+an environment variable name to its original base URL). Plugins observe
+`experimental_provider.http`; inspect stored metadata with
+`bb thread log THREAD --json --all` and filter events of type `provider/http`.
+Headers are bounded and credential-bearing headers are redacted; unsupported
+traffic is reported as unavailable. See `docs/configuration.md` for limits.

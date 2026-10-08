@@ -264,7 +264,12 @@ export function buildSessionOptions(
     ...(params.reasoningLevel
       ? { thinking: SUMMARIZED_ADAPTIVE_THINKING }
       : {}),
-    settings: flagSettings,
+    settings: {
+      ...flagSettings,
+      ...(env.BB_UPSTREAM_GATEWAY && env.ANTHROPIC_BASE_URL
+        ? { env: { ANTHROPIC_BASE_URL: env.ANTHROPIC_BASE_URL } }
+        : {}),
+    },
     ...(extraArgs ? { extraArgs } : {}),
     ...(pathToClaudeCodeExecutable ? { pathToClaudeCodeExecutable } : {}),
     ...(params.plugins ? { plugins: params.plugins } : {}),

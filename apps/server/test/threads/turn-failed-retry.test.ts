@@ -67,6 +67,7 @@ afterEach(() => {
 function recordTurnFailedAnnouncements(): string[] {
   const announced: string[] = [];
   setPluginThreadEventEmitter({
+    emitProviderHttp: () => {},
     emitThreadEvents: () => {},
     emitTerminalInput: () => {},
     emitHostDeleted: () => {},

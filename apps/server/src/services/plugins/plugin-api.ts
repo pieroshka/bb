@@ -580,6 +580,7 @@ export function createPluginApi(options: {
   const databaseHandles: Database.Database[] = [];
   const threadEventHandlers: PluginThreadEventHandlers = {
     "experimental_thread.events": [],
+    "experimental_provider.http": [],
     "experimental_terminal.input": [],
     "experimental_host.deleted": [],
     "thread.created": [],

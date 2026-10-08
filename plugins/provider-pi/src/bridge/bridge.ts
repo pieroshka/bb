@@ -1,11 +1,6 @@
 #!/usr/bin/env node
 
-import {
-  existsSync,
-  mkdirSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,6 +19,7 @@ import {
   createPendingToolCallTracker,
   decodeBridgeJsonRpcResponse,
   experimental_defineProviderBridge,
+  experimental_providerHttpResponse,
   initializeParamsSchema,
   providerInstallationRunParamsSchema,
   providerInstallationStatusParamsSchema,
@@ -421,6 +417,19 @@ function createOnPiEvent(
   return (event) => {
     const threadSession = getCurrentThreadSession(args);
     if (!threadSession) return;
+    if (event.type === "bb_http_response") {
+      const metadata = z
+        .object({ status: z.number(), headers: z.array(z.string()) })
+        .safeParse(event);
+      if (metadata.success)
+        send(
+          experimental_providerHttpResponse({
+            threadId: args.threadId,
+            ...metadata.data,
+          }),
+        );
+      return;
+    }
     emitForSession(args.threadId, "sdk/message", {
       threadId: args.threadId,
       message: event,
@@ -866,7 +875,9 @@ async function handleThreadConstruction(
     threadId: providerThreadId,
   });
   const relocate = piSessionNeedsRelocation(sourceFile, params.cwd);
-  const nextProviderThreadId = relocate ? `pi_${randomUUID()}` : providerThreadId;
+  const nextProviderThreadId = relocate
+    ? `pi_${randomUUID()}`
+    : providerThreadId;
   const targetFile = resolvePiSessionFilePath({
     env: process.env,
     threadId: nextProviderThreadId,

@@ -343,8 +343,25 @@ export default function bbExtension(pi) {
     });
   }
 
+  pi.on("after_provider_response", (event) => {
+    if (process.env.BB_UPSTREAM_GATEWAY) return;
+    const headers = Object.entries(event.headers).flatMap(([name, value]) => [name, /(?:cookie|authorization|authentication|api[-_]?key|(?:^|[-_])(?:auth[-_]?token|access[-_]?token|refresh[-_]?token|id[-_]?token)(?:$|[-_])|(?:^|[-_])token$|secret|credential)/i.test(name) ? "[redacted]" : value]);
+    writeLine(CHILD_TO_BRIDGE_FD, { kind: "http-response", status: event.status, headers });
+  });
+
+  async function captureModel(ctx) {
+    const gateway = process.env.BB_UPSTREAM_GATEWAY;
+    const model = ctx.model;
+    if (!gateway || !model || model.baseUrl.startsWith(gateway + "/")) return;
+    const upstream = new URL(model.baseUrl);
+    if (!["http:", "https:"].includes(upstream.protocol) || upstream.username || upstream.password) return;
+    await pi.setModel({ ...model, baseUrl: gateway + "/" + Buffer.from(upstream.origin).toString("base64url") + upstream.pathname + upstream.search });
+  }
+
+  pi.on("model_select", async (_event, ctx) => { await captureModel(ctx); });
   pi.on("session_start", async (_event, ctx) => {
     sessionContext = ctx;
+    await captureModel(ctx);
     writeLine(CHILD_TO_BRIDGE_FD, {
       kind: "model-scope",
       ...currentModelScope(),

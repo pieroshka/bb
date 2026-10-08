@@ -18,6 +18,11 @@
       "upstreamBase": "129f621771a3e275773992db648316966ac207cf",
       "commit": "9d0ff48591da13c77857cf5353462da1b8f7f13f",
       "contract": ".fork/DEPLOYMENT.md"
+    },
+    {
+      "id": "upstream-http-metadata",
+      "upstreamBase": "129f621771a3e275773992db648316966ac207cf",
+      "contract": "docs/configuration.md#upstream-http-response-capture"
     }
   ]
 }

@@ -2775,6 +2775,7 @@ describe("a provider-produced environment over its life", () => {
     await withTestHarness(async (harness) => {
       const unarchived: string[] = [];
       setPluginThreadEventEmitter({
+        emitProviderHttp: () => {},
         emitThreadEvents: () => {},
         emitTerminalInput: () => {},
         emitHostDeleted: () => {},

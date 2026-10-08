@@ -25,7 +25,7 @@ handler is told, and whatever it returns is IGNORED. The surface that ASKS is
 `bb.experimental_hooks`, below, where core acts on your answer — the same split
 git draws between post-commit and pre-commit hooks.
 
-Fourteen events. The seven `thread.*` ones are thread lifecycle. `interaction.pending`
+Fifteen events. The seven `thread.*` ones are thread lifecycle. `interaction.pending`
 fires after core commits a pending interaction row. The three `message.*`
 ones fire when a dispatch is queued behind a wait, when a queued row's waits
 all clear and it dispatches, or when the queued row is cancelled. Every listener sees every queued row, so a plugin
@@ -498,3 +498,5 @@ compares stored paths in the database and does not contact hosts.
 Scoped discovery omits providers whose declared requirements are unmet without
 running Git inspection or plugin availability. Without a machine scope,
 discovery includes providers structurally eligible on any persistent machine.
+
+`"experimental_provider.http"` delivers `{ thread, event }` after the `provider/http` event is persisted. `event.metadata` includes response status, arbitrary header entries, redacted names, truncation and request/turn correlation, or completion trailers and outcome, or capture unavailability. Replay through `bb.sdk.threads.events.list`. Enable `BB_UPSTREAM_CAPTURE=1` for gateway capture; custom endpoints use `BB_UPSTREAM_ENDPOINTS`.
