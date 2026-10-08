@@ -5172,86 +5172,110 @@ describe("canonical model context-window hint", () => {
     permissionEscalation: null,
   };
 
-  it("rebuilds with the same provider session when the turn environment changes", async () => {
-    const bridge = createBridgeJsonRpcTestHarness(handleLine);
-    const queries: ControlledClaudeQuery[] = [];
-    queryMock.mockImplementation(() => {
-      const query = createControlledClaudeQuery();
-      queries.push(query);
-      return query;
-    });
-
-    try {
-      const threadId = "thread-env-change";
-      bridge.sendRequest(1, "thread/start", {
-        threadId,
-        cwd: "/tmp/worktree",
-        instructionMode: "append",
-        options: {
-          ...canonicalOptions,
-          envVars: { PLUGIN_ACCESS_TOKEN: "first" },
-          providerOptions: { disable1MContext: true },
-        },
+  it.each(["http://127.0.0.1:41002/capture-b", null])(
+    "rebuilds with the same provider session when the turn environment changes (%s capture gateway)",
+    async (gateway) => {
+      const bridge = createBridgeJsonRpcTestHarness(handleLine);
+      const queries: ControlledClaudeQuery[] = [];
+      queryMock.mockImplementation(() => {
+        const query = createControlledClaudeQuery();
+        queries.push(query);
+        return query;
       });
-      const startResponse = await bridge.waitForResponse(1);
-      const providerThreadId = getProviderThreadIdFromResult(startResponse);
 
-      bridge.sendRequest(2, "turn/start", {
-        threadId,
-        providerThreadId,
-        clientRequestId: "creq_23456789ab",
-        input: [{ type: "text", text: "continue", mentions: [] }],
-        options: {
-          ...canonicalOptions,
-          envVars: { PLUGIN_ACCESS_TOKEN: "second" },
-        },
-      });
-      await bridge.flushWork();
+      try {
+        const threadId = "thread-env-change";
+        bridge.sendRequest(1, "thread/start", {
+          threadId,
+          cwd: "/tmp/worktree",
+          instructionMode: "append",
+          options: {
+            ...canonicalOptions,
+            envVars: {
+              PLUGIN_ACCESS_TOKEN: "first",
+              ANTHROPIC_BASE_URL: "https://upstream.example",
+              CLAUDE_CONFIG_DIR: "/nonexistent/bb-http-test",
+              BB_UPSTREAM_GATEWAY: "http://127.0.0.1:41001/capture-a",
+            },
+            providerOptions: { disable1MContext: true },
+          },
+        });
+        const startResponse = await bridge.waitForResponse(1);
+        const providerThreadId = getProviderThreadIdFromResult(startResponse);
 
-      expect(queries).toHaveLength(2);
-      expect(queries[0]?.close).toHaveBeenCalledOnce();
-      expect(getLatestQueryOptions()).toMatchObject({
-        env: {
-          PLUGIN_ACCESS_TOKEN: "second",
-          CLAUDE_CODE_DISABLE_1M_CONTEXT: "1",
-        },
-        resume: providerThreadId,
-      });
-      await expect(readNextPromptText(getLatestQueryCall())).resolves.toBe(
-        "continue",
-      );
-      await bridge.waitForResponse(2);
-      expect(
-        bridge.messages.filter(
-          (message) => message.method === "session/replaced",
-        ),
-      ).toContainEqual(
-        expect.objectContaining({
-          params: expect.objectContaining({
-            contextLost: false,
-            providerThreadId,
-            reason:
-              "Execution settings changed; the Claude session was rebuilt to apply them.",
-            showRuntimeNote: true,
-            threadId,
+        bridge.sendRequest(2, "turn/start", {
+          threadId,
+          providerThreadId,
+          clientRequestId: "creq_23456789ab",
+          input: [{ type: "text", text: "continue", mentions: [] }],
+          options: {
+            ...canonicalOptions,
+            envVars: {
+              PLUGIN_ACCESS_TOKEN: "second",
+              ANTHROPIC_BASE_URL: "https://upstream.example",
+              CLAUDE_CONFIG_DIR: "/nonexistent/bb-http-test",
+              ...(gateway ? { BB_UPSTREAM_GATEWAY: gateway } : {}),
+            },
+          },
+        });
+        await bridge.flushWork();
+
+        expect(queries).toHaveLength(2);
+        expect(queries[0]?.close).toHaveBeenCalledOnce();
+        expect(getLatestQueryOptions()).toMatchObject({
+          env: {
+            PLUGIN_ACCESS_TOKEN: "second",
+            CLAUDE_CODE_DISABLE_1M_CONTEXT: "1",
+          },
+          resume: providerThreadId,
+        });
+        if (gateway) {
+          expect(getLatestQueryOptions()).toMatchObject({
+            settings: {
+              env: {
+                ANTHROPIC_BASE_URL: expect.stringContaining(gateway + "/"),
+              },
+            },
+          });
+        } else {
+          expect(getLatestQueryOptions()).not.toHaveProperty("settings.env");
+        }
+        await expect(readNextPromptText(getLatestQueryCall())).resolves.toBe(
+          "continue",
+        );
+        await bridge.waitForResponse(2);
+        expect(
+          bridge.messages.filter(
+            (message) => message.method === "session/replaced",
+          ),
+        ).toContainEqual(
+          expect.objectContaining({
+            params: expect.objectContaining({
+              contextLost: false,
+              providerThreadId,
+              reason:
+                "Execution settings changed; the Claude session was rebuilt to apply them.",
+              showRuntimeNote: true,
+              threadId,
+            }),
           }),
-        }),
-      );
+        );
 
-      bridge.sendRequest(3, "thread/stop", {
-        threadId,
-        providerThreadId,
-        intent: "interrupt",
-        activeTurnId: null,
-      });
-      await bridge.flushWork();
-      queries[1]?.finish();
-      await bridge.waitForResponse(3);
-    } finally {
-      queries.forEach((query) => query.finish());
-      bridge.restore();
-    }
-  });
+        bridge.sendRequest(3, "thread/stop", {
+          threadId,
+          providerThreadId,
+          intent: "interrupt",
+          activeTurnId: null,
+        });
+        await bridge.flushWork();
+        queries[1]?.finish();
+        await bridge.waitForResponse(3);
+      } finally {
+        queries.forEach((query) => query.finish());
+        bridge.restore();
+      }
+    },
+  );
 
   it("uses Fable's Claude Code capacity through a custom API endpoint", async () => {
     const bridge = createBridgeJsonRpcTestHarness(handleLine);

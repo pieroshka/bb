@@ -1626,16 +1626,18 @@ function applyTurnEnvironment(
     ...attachment.sessionConstructionConfig,
     config,
   };
-  attachment.sessionOptions.env = {
-    ...buildSessionEnv(
+  const nextOptions = buildSessionOptions(
+    {
+      ...attachment.sessionConstructionConfig.sessionOptions,
+      ...attachment.liveSettings,
+    },
+    buildSessionEnv(
       envOverrides,
       attachment.sessionConstructionConfig.sessionOptions.cwd,
     ),
-    CLAUDE_CODE_DISABLE_1M_CONTEXT: attachment.sessionConstructionConfig
-      .sessionOptions.disable1MContext
-      ? "1"
-      : "0",
-  };
+  );
+  attachment.sessionOptions.env = nextOptions.env;
+  attachment.sessionOptions.settings = nextOptions.settings;
   if (attachment.residentSession) {
     attachment.residentSession.restartBeforeNextTurn = {
       reason:
