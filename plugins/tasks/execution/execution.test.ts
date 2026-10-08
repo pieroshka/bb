@@ -380,6 +380,7 @@ describe("task execution ownership", () => {
       name: "Worker",
       providerId: "codex",
       modelId: "model",
+      serviceTier: null,
       reasoningLevel: "high",
       permissionMode: "full",
       environmentKind: "project-default",
@@ -414,6 +415,7 @@ describe("task execution ownership", () => {
       name: "Worker",
       providerId: "codex",
       modelId: "model",
+      serviceTier: null,
       reasoningLevel: "high",
       permissionMode: "full",
       environmentKind: "project-default",
@@ -490,7 +492,7 @@ describe("task execution ownership", () => {
     test.harness.sdk.stub("threads.get", async () =>
       makeThreadResponse({
         id: "thr_missing_event",
-        deletedAt: new Date().toISOString(),
+        deletedAt: Date.now(),
       }),
     );
     await registerLifecycle(test.bb, createStore(test.bb));
