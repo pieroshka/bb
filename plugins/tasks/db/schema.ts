@@ -242,6 +242,54 @@ const MIGRATIONS = [
     ALTER TABLE presets DROP COLUMN service_tier;
     ALTER TABLE presets RENAME COLUMN service_tier_open TO service_tier;
   `,
+  `
+    ALTER TABLE tasks ADD COLUMN execution_revision INTEGER NOT NULL DEFAULT 0;
+    CREATE TRIGGER task_execution_revision AFTER UPDATE OF title, description, status, priority, due_date, parent_task_id, project_id ON tasks
+    BEGIN UPDATE tasks SET execution_revision = execution_revision + 1 WHERE id = NEW.id; END;
+    CREATE TRIGGER task_execution_label_added AFTER INSERT ON task_labels
+    BEGIN UPDATE tasks SET execution_revision = execution_revision + 1 WHERE id = NEW.task_id; END;
+    CREATE TRIGGER task_execution_label_removed AFTER DELETE ON task_labels
+    BEGIN UPDATE tasks SET execution_revision = execution_revision + 1 WHERE id = OLD.task_id; END;
+    CREATE TRIGGER task_execution_attachment_added AFTER INSERT ON attachments
+    BEGIN UPDATE tasks SET execution_revision = execution_revision + 1 WHERE id = COALESCE(NEW.task_id, (SELECT task_id FROM comments WHERE id = NEW.comment_id)); END;
+    CREATE TRIGGER task_execution_attachment_removed AFTER DELETE ON attachments
+    BEGIN UPDATE tasks SET execution_revision = execution_revision + 1 WHERE id = COALESCE(OLD.task_id, (SELECT task_id FROM comments WHERE id = OLD.comment_id)); END;
+    CREATE TRIGGER task_execution_attachment_changed AFTER UPDATE ON attachments
+    BEGIN UPDATE tasks SET execution_revision = execution_revision + 1 WHERE id = COALESCE(NEW.task_id, (SELECT task_id FROM comments WHERE id = NEW.comment_id)); END;
+    CREATE TRIGGER task_execution_comment_added AFTER INSERT ON comments WHEN NEW.kind <> 'system'
+    BEGIN UPDATE tasks SET execution_revision = execution_revision + 1 WHERE id = NEW.task_id; END;
+    CREATE TRIGGER task_execution_comment_changed AFTER UPDATE OF body ON comments WHEN NEW.kind <> 'system'
+    BEGIN UPDATE tasks SET execution_revision = execution_revision + 1 WHERE id = NEW.task_id; END;
+    CREATE TRIGGER task_execution_comment_removed AFTER DELETE ON comments WHEN OLD.kind <> 'system'
+    BEGIN UPDATE tasks SET execution_revision = execution_revision + 1 WHERE id = OLD.task_id; END;
+    CREATE TABLE task_executions (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      generation INTEGER NOT NULL,
+      owner_plugin_id TEXT NOT NULL,
+      assignment_id TEXT NOT NULL,
+      released_at TEXT,
+      last_confirmation TEXT,
+      data TEXT NOT NULL,
+      UNIQUE(task_id, generation),
+      UNIQUE(owner_plugin_id, assignment_id)
+    );
+    CREATE UNIQUE INDEX task_execution_active ON task_executions(task_id) WHERE released_at IS NULL;
+    CREATE TRIGGER task_execution_list_insert AFTER INSERT ON task_executions
+    BEGIN UPDATE task_list_revision SET revision = revision + 1 WHERE id = 1; END;
+    CREATE TRIGGER task_execution_list_update AFTER UPDATE OF data ON task_executions
+    BEGIN UPDATE task_list_revision SET revision = revision + 1 WHERE id = 1; END;
+    CREATE TRIGGER task_execution_delete_guard BEFORE DELETE ON tasks
+    WHEN EXISTS (SELECT 1 FROM task_executions WHERE task_id = OLD.id AND released_at IS NULL)
+    BEGIN SELECT RAISE(ABORT, 'Task execution is reserved; reconcile its terminal outcome before deletion'); END;
+    CREATE TABLE task_execution_threads (
+      execution_id TEXT NOT NULL REFERENCES task_executions(id),
+      thread_id TEXT NOT NULL,
+      closed_at TEXT,
+      PRIMARY KEY(execution_id, thread_id)
+    );
+    CREATE INDEX task_execution_thread_lookup ON task_execution_threads(thread_id);
+  `,
 ] as const;
 
 export function initializeTasksSchema(db: PluginDatabase): void {

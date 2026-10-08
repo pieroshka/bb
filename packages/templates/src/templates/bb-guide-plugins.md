@@ -257,6 +257,7 @@ The Tasks plugin is an opt-in official plugin bundled with the app:
 and the `bb tasks` command. Common agent operations are:
 
   bb tasks show <key-or-id> [--json]
+  bb tasks execution <key-or-id> [--action preflight|prepare|start|pause|resume|stop|refresh] [--json]
   bb tasks list [--project <prefix-or-id>] [filters...] [--sort manual|priority|due] [--limit 1-500] [--cursor <opaque>] [--json]
   bb tasks comment <key-or-id> (--body <markdown> | --body-file <path>) [--json]
   bb tasks attachment add <key-or-comment-id> --file <path> [--json]
@@ -265,6 +266,11 @@ and the `bb tasks` command. Common agent operations are:
   bb tasks detach <key-or-id> [--thread <thread-id>] [--json]
   bb tasks update <key-or-id> --status in_review [--json]
   bb tasks update <key-or-id> (--parent <parent-key-or-id> | --no-parent) [--json]
+
+Execution reservations cover local workers, workflows, and external backends.
+Prepare freezes requirements without starting; Start is explicit. Stop and uncertain
+starts retain ownership. Manual edits hold automatic status synchronization; Refresh
+reconciles the same assignment. Delegation cannot replace an active reservation.
 
 Run `bb tasks --help` for project, folder, task, label, attachment, and demo-data
 commands, plus preset management, delegation, and attached-thread inspection.

@@ -1,3 +1,5 @@
+import { executionHandlers } from "../execution";
+import { executionActionSchema } from "../execution/contract";
 import { resolve } from "node:path";
 import {
   PluginCliError,
@@ -680,6 +682,73 @@ export function registerTasksCli(
       description:
         "Tasks are addressed by key (ABC-12) or ULID. --project takes a tracker project prefix or id, never a bb project id (proj_...).",
       commands: {
+        execution: cliCommand({
+          summary: "Inspect or control a task execution assignment",
+          description:
+            "Actions are forwarded to the assignment owner. Missing backends and uncertain starts retain ownership; local delegation never replaces them.",
+          positionals: [KEY_POSITIONAL],
+          options: {
+            json: JSON_OPTION,
+            action: {
+              type: "string",
+              description:
+                "preflight, prepare, start, pause, resume, stop, or refresh",
+            },
+          },
+          run(input) {
+            return guard(async () => {
+              const task = await resolveTask(
+                domain,
+                input.positionals["key-or-id"],
+              );
+              const api = executionHandlers(bb, store);
+              const context = {
+                experimental_caller: { kind: "client" as const },
+              };
+              if (input.options.action === "preflight")
+                return JSON.stringify(
+                  await api.executionPreflight({ taskId: task.id }, context),
+                );
+              if (input.options.action === "prepare") {
+                const result = await api.executionPrepare(
+                  { taskId: task.id },
+                  context,
+                );
+                if (!result.ok)
+                  throw new Error(
+                    result.message ?? "Execution preparation failed",
+                  );
+                return JSON.stringify(result);
+              }
+              const state = await api.executionGet(
+                { taskId: task.id },
+                context,
+              );
+              if (!input.options.action)
+                return input.options.json
+                  ? JSON.stringify(state)
+                  : JSON.stringify(state, null, 2);
+              const execution = state.active ?? state.history[0];
+              if (!execution)
+                throw new Error("This task has no execution assignment");
+              const result = await api.executionControl(
+                {
+                  executionId: execution.executionId,
+                  generation: execution.generation,
+                  assignmentId: execution.assignmentId,
+                  action: executionActionSchema.parse(input.options.action),
+                },
+                context,
+              );
+              if (!result.ok)
+                throw new Error(result.message ?? "Execution action failed");
+              return input.options.json
+                ? JSON.stringify(result)
+                : (result.message ?? "Execution action accepted");
+            });
+          },
+        }),
+
         status: cliCommand({
           summary: "Show the Tasks plugin name and version",
           description:
@@ -2608,6 +2677,7 @@ export function registerTasksCli(
                     presetId: preset.id,
                     extraInstructions: input.options.instructions,
                   }),
+                  { experimental_caller: { kind: "client" } },
                 ),
               );
               return input.options.json
@@ -2647,6 +2717,7 @@ export function registerTasksCli(
                       taskId: task.id,
                       threadId,
                     }),
+                    { experimental_caller: { kind: "client" } },
                   ),
                 );
               return input.options.json
@@ -2686,6 +2757,7 @@ export function registerTasksCli(
                       taskId: task.id,
                       threadId,
                     }),
+                    { experimental_caller: { kind: "client" } },
                   ),
                 );
               return input.options.json

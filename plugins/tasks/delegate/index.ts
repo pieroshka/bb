@@ -1,4 +1,8 @@
-import type { BbPluginApi, PluginRpcHandlers } from "@get-bb/plugin-sdk";
+import { randomUUID } from "node:crypto";
+import type {
+  BbPluginApi,
+  ExperimentalPluginRpcHandlersWithContext,
+} from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import type {
   Attachment,
@@ -298,10 +302,16 @@ function taskThreadLiveStatus(thread: SdkThread): TaskThreadLiveStatus {
 export function handlers(
   bb: BbPluginApi,
   store: TasksApiStore,
-): PluginRpcHandlers<typeof delegationRpcContract> {
+): ExperimentalPluginRpcHandlersWithContext<typeof delegationRpcContract> {
   return {
     async delegate(input) {
+      const snapshot = await store.executions.snapshot(input.taskId);
       const task = requireTask(store.tasks, input.taskId);
+      const held = store.executions.active(task.id);
+      if (held)
+        throw new Error(
+          `Task execution is reserved by ${held.backendId}; reconcile that assignment before delegating`,
+        );
       const project = requireProject(store.tasks, task.projectId);
       const linkedBbProjectId = requireLinkedBbProject(project);
       const preset = requirePreset(store.tasks, input.presetId);
@@ -326,6 +336,14 @@ export function handlers(
       });
 
       const environment = await presetSpawnEnvironment(bb, preset);
+      const reservation = store.executions.reserve({
+        snapshot,
+        ownerPluginId: "tasks",
+        backendId: "local-tasks",
+        connectionId: "local",
+        assignmentId: randomUUID(),
+      });
+      publishTasksChanged(bb, task.id, task.projectId);
       const thread = await bb.sdk.threads
         .spawn({
           projectId: linkedBbProjectId,
@@ -340,9 +358,18 @@ export function handlers(
           title,
           prompt,
         })
-        .catch((error: unknown) => mapSpawnTargetError(error, preset));
+        .catch((error: unknown) => {
+          store.executions.uncertain(
+            reservation,
+            "tasks",
+            `Spawn outcome is uncertain: ${errorMessage(error)}. Reconcile before retrying.`,
+          );
+          publishTasksChanged(bb, task.id, task.projectId);
+          return mapSpawnTargetError(error, preset);
+        });
 
       const taskThread = store.transaction(() => {
+        store.executions.attach(reservation, "tasks", thread.id);
         const attached = store.tasks.upsertTaskThread({
           taskId: task.id,
           threadId: thread.id,
@@ -351,8 +378,31 @@ export function handlers(
           liveStatus: "starting",
         });
 
-        if (task.status === "backlog" || task.status === "todo") {
-          store.tasks.updateTask(task.id, { status: "in_progress" });
+        const confirmed = store.executions.confirm(
+          reservation,
+          "tasks",
+          0,
+          {
+            backendLabel: "Local worker",
+            remoteRevision: thread.id,
+            phase: "running",
+            stage: "Working",
+            waitReason: null,
+            remoteUrl: null,
+            pullRequests: [],
+            evidence: [],
+            capabilities: ["refresh", "stop"],
+            confirmedAt: new Date().toISOString(),
+            completion: null,
+          },
+          task.status === "backlog" || task.status === "todo"
+            ? "in_progress"
+            : undefined,
+        );
+        if (
+          confirmed.statusApplied &&
+          (task.status === "backlog" || task.status === "todo")
+        ) {
           createSystemComment(store.tasks, {
             taskId: task.id,
             presetName: preset.name,
@@ -390,7 +440,7 @@ export function handlers(
       return { threadId: thread.id };
     },
 
-    async taskThreadsAttach(input) {
+    async taskThreadsAttach(input, context) {
       const task = requireTask(store.tasks, input.taskId);
       const thread = await bb.sdk.threads.get({ threadId: input.threadId });
       const title = truncateToWidth(
@@ -398,12 +448,52 @@ export function handlers(
         MAX_DELEGATED_THREAD_TITLE_WIDTH,
       );
 
-      store.tasks.upsertTaskThread({
-        taskId: task.id,
-        threadId: thread.id,
-        presetName: MANUAL_PRESET_NAME,
-        title,
-        liveStatus: taskThreadLiveStatus(thread),
+      let reservation;
+      const held = store.executions.active(task.id);
+      if (input.execution) {
+        if (context.experimental_caller.kind !== "plugin")
+          throw new Error(
+            "Attaching execution workers requires the authenticated owner plugin",
+          );
+        reservation = store.executions.get(
+          input.execution,
+          context.experimental_caller.pluginId,
+        );
+        if (reservation.taskId !== task.id)
+          throw new Error("Execution belongs to another task");
+      } else if (held) {
+        if (
+          held.ownerPluginId !== "tasks" ||
+          !held.localThreadIds.includes(thread.id)
+        )
+          throw new Error(
+            "Task execution is reserved; attach requires its owner and immutable execution identity",
+          );
+        reservation = held;
+      } else {
+        const snapshot = await store.executions.snapshot(task.id);
+        reservation = store.executions.reserve({
+          snapshot,
+          ownerPluginId: "tasks",
+          backendId: "local-tasks",
+          connectionId: "local",
+          assignmentId: randomUUID(),
+          existingThreadId: thread.id,
+        });
+      }
+      store.transaction(() => {
+        store.executions.attach(
+          reservation,
+          reservation.ownerPluginId,
+          thread.id,
+        );
+        store.tasks.upsertTaskThread({
+          taskId: task.id,
+          threadId: thread.id,
+          presetName: MANUAL_PRESET_NAME,
+          title,
+          liveStatus: taskThreadLiveStatus(thread),
+        });
       });
 
       publishThreadsChanged(bb, task.id);

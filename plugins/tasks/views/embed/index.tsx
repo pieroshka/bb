@@ -1,3 +1,4 @@
+import { ExecutionIndicator } from "../../execution/view";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   PluginMessageDirectiveProps,
@@ -257,6 +258,7 @@ export function TaskDirectiveCard({ attributes }: PluginMessageDirectiveProps) {
         >
           {task.title}
         </span>
+        <ExecutionIndicator task={task} />
         {task.priority !== "none" ? (
           <span aria-hidden className="shrink-0">
             <PriorityIcon priority={task.priority} />

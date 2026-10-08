@@ -1,3 +1,4 @@
+import { createExecutionStore, type ExecutionStore } from "../execution/store";
 import type { BbPluginApi, PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import {
   createTasksStore,
@@ -51,6 +52,7 @@ const MAX_THREAD_SEARCH_RESULTS = 10;
 
 export interface TasksApiStore {
   readonly tasks: TasksStore;
+  readonly executions: ExecutionStore;
   transaction<T>(operation: () => T): T;
   taskLabelIds(taskIds: readonly string[]): Map<string, string[]>;
   projectTaskCount(projectId: string): number;
@@ -65,6 +67,7 @@ export function createStore(bb: BbPluginApi): TasksApiStore {
 
   return {
     tasks,
+    executions: createExecutionStore(database, tasks),
     transaction<T>(operation: () => T): T {
       return database.transaction(operation)();
     },
@@ -94,9 +97,10 @@ export function createStore(bb: BbPluginApi): TasksApiStore {
     projectTaskCount(projectId: string): number {
       return (
         database
-          .prepare<[string], CountRow>(
-            "SELECT COUNT(*) AS count FROM tasks WHERE project_id = ?",
-          )
+          .prepare<
+            [string],
+            CountRow
+          >("SELECT COUNT(*) AS count FROM tasks WHERE project_id = ?")
           .get(projectId)?.count ?? 0
       );
     },
@@ -192,9 +196,22 @@ export function publishCommentsChanged(bb: BbPluginApi, taskId: string): void {
   bb.realtime.publish("comments:changed", payload);
 }
 
+function executionSummary(store: TasksApiStore, taskId: string) {
+  const execution = store.executions.latest(taskId);
+  if (!execution) return {};
+  const {
+    snapshot: _snapshot,
+    acceptedTaskRevision: _revision,
+    localThreadIds: _threads,
+    ...summary
+  } = store.executions.checkDrift(execution);
+  return { execution: summary };
+}
+
 function apiTask(store: TasksApiStore, task: StoredTask): Task {
   return {
     ...task,
+    ...executionSummary(store, task.id),
     labelIds: store.taskLabelIds([task.id]).get(task.id) ?? [],
   };
 }
@@ -203,6 +220,7 @@ function apiTasks(store: TasksApiStore, tasks: StoredTask[]): Task[] {
   const labelsByTask = store.taskLabelIds(tasks.map((task) => task.id));
   return tasks.map((task) => ({
     ...task,
+    ...executionSummary(store, task.id),
     labelIds: labelsByTask.get(task.id) ?? [],
   }));
 }

@@ -1,3 +1,4 @@
+import { ExecutionSection } from "../../execution/view";
 import { useEffect, useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import SmilePlusIcon from "@hugeicons/core-free-icons/SmilePlusIcon";
@@ -487,6 +488,8 @@ function TaskDetail({ task }: { task: Task }) {
             subtasks={subtasks.data ?? []}
             onCreate={createSubtask}
           />
+
+          <ExecutionSection key={task.id} task={task} />
 
           {(threads.data ?? []).length > 0 ? (
             <div className="mt-6">

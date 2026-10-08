@@ -9,7 +9,9 @@ Use the `bb tasks` CLI to understand the assigned task, keep its record useful,
 and report the outcome where the work is tracked.
 
 For task dispatch and execution presets, read
-[references/delegation.md](references/delegation.md).
+[references/delegation.md](references/delegation.md). External execution is inspected
+and controlled with `bb tasks execution KEY --json` and `--action`; a reserved task
+cannot be delegated again until its prior execution has a verified terminal outcome.
 
 ## Work a task
 

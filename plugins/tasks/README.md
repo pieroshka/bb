@@ -154,3 +154,9 @@ Tasks skill, which directs the worker to read and update the tracked task.
 - Batch task-list enrichment for comments and attached-thread state.
 - Add notifications and an inbox for task activity.
 - Add a command palette entry for Tasks to cmd-K.
+
+## Execution ownership
+
+Tasks supports generic external backend projections and one atomic reservation
+shared with native delegation and Factory workflows. See
+[the RPC, lifecycle, and CLI contract](execution/README.md).

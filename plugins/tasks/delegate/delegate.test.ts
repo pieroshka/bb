@@ -116,6 +116,10 @@ describe("task delegation", () => {
       ]),
     );
     expect(harness.realtimeSignals).toEqual([
+      {
+        channel: "tasks:changed",
+        payload: { taskId: task.id, projectId: project.id },
+      },
       { channel: "threads:changed", payload: { taskId: task.id } },
       {
         channel: "tasks:changed",
@@ -455,6 +459,9 @@ describe("task thread detach", () => {
       taskId: task.id,
       threadId: "thr_dead",
     });
+    store.executions.closeLocalThread("thr_dead");
+    const closed = store.tasks.getTaskThreadByThreadId(task.id, "thr_dead")!;
+    store.tasks.updateTaskThreadStatus(closed.id, "completed");
     await harness.callRpc("taskThreadsAttach", {
       taskId: task.id,
       threadId: "thr_live",
