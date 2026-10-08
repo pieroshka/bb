@@ -12,6 +12,7 @@ import { useTasksRpc } from "../../shell/data.js";
 import { TasksRefreshProvider } from "../../shell/refresh.js";
 import { PANEL_PATH, tasksRouteToSubPath } from "../../shell/routes.js";
 import { DetailView } from "../detail/index.js";
+import { ProjectBoardPanel } from "./project-board.js";
 import { PRIORITY_LABELS, STATUS_LABELS } from "../list/lib.js";
 import { PriorityIcon, StatusIcon } from "../list/icons.js";
 
@@ -276,11 +277,7 @@ function TaskEmbedPanelContent({ params }: PluginThreadPanelProps) {
       ? params.taskKey
       : null;
   if (taskKey === null || !TASK_KEY_PATTERN.test(taskKey.trim())) {
-    return (
-      <div className="p-3 text-sm text-muted-foreground">
-        Open a task card from a message to view it here.
-      </div>
-    );
+    return <ProjectBoardPanel />;
   }
   return (
     <div className="flex h-full min-h-0 flex-col">

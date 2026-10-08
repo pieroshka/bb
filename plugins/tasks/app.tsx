@@ -25,7 +25,7 @@ export default definePluginApp((app) => {
   });
   app.slots.threadPanelAction({
     id: "task",
-    title: "Task",
+    title: "Tasks",
     icon: "ListTodo",
     component: TaskEmbedPanel,
   });

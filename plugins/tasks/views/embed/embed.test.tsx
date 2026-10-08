@@ -70,7 +70,7 @@ describe("Tasks app slots", () => {
     expect(app.messageDirectives[0]?.id).toBe("task");
     expect(app.threadPanelActions[0]).toMatchObject({
       id: "task",
-      title: "Task",
+      title: "Tasks",
     });
   });
 });
@@ -330,12 +330,73 @@ describe("Task embed panel", () => {
     await slot.findByText("Recovered embedded detail");
   });
 
-  it("shows a hint when opened without a task key", () => {
+});
+
+describe("Tasks side panel board", () => {
+  const BB_PROJECT_ID = "proj_current";
+  const linkedProject = {
+    id: PROJECT_ID,
+    name: "Tasks Plugin",
+    prefix: "TSK",
+    nextTaskNumber: 5,
+    color: "blue",
+    folderId: null,
+    linkedBbProjectId: BB_PROJECT_ID,
+    createdAt: "2026-07-15T00:00:00.000Z",
+  };
+
+  function boardRpc(projects: unknown[]) {
+    return {
+      listProjects: () => ({ projects }),
+      listTasks: () => ({ tasks: [task], nextCursor: null }),
+      listLabels: () => ({ labels: [] }),
+      listAttachments: () => ({ attachments: [] }),
+      listTaskThreads: () => ({ taskThreads: [] }),
+    };
+  }
+
+  it("shows the board of the Tasks project linked to the current bb project", async () => {
     const slot = renderSlot(
       app.threadPanelActions[0]!,
       { threadId: "thr_1", params: null },
-      { rpc: {} },
+      {
+        context: { projectId: BB_PROJECT_ID, threadId: "thr_1" },
+        rpc: boardRpc([
+          { ...linkedProject, id: "01HZZZZZZZZZZZZZZZZZZZZZP9", name: "Other", linkedBbProjectId: "proj_other" },
+          linkedProject,
+        ]),
+        openThreadPanel: () => true,
+      },
     );
-    slot.getByText("Open a task card from a message to view it here.");
+    fireEvent.click(await slot.findByText("Ship task embeds"));
+    expect(slot.navigateCalls).toContainEqual({
+      method: "openThreadPanel",
+      options: { actionId: "task", title: "TSK-4", params: { taskKey: "TSK-4" } },
+    });
+
+    fireEvent.click(slot.getByRole("button", { name: "Open Tasks Plugin board in Tasks" }));
+    expect(slot.navigateCalls).toContainEqual({
+      method: "toPluginPanel",
+      path: "tasks",
+      options: { subPath: `${PROJECT_ID}?view=board` },
+    });
+  });
+
+  it("explains when no Tasks project is linked to the current bb project", async () => {
+    const slot = renderSlot(
+      app.threadPanelActions[0]!,
+      { threadId: "thr_1", params: null },
+      {
+        context: { projectId: BB_PROJECT_ID, threadId: "thr_1" },
+        rpc: boardRpc([{ ...linkedProject, linkedBbProjectId: null }]),
+      },
+    );
+    await slot.findByText("No Tasks project for this project");
+    fireEvent.click(slot.getByRole("button", { name: "Manage projects" }));
+    expect(slot.navigateCalls).toContainEqual({
+      method: "toPluginPanel",
+      path: "tasks",
+      options: { subPath: "manage" },
+    });
   });
 });
