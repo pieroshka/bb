@@ -332,7 +332,7 @@ describe("Task embed panel", () => {
 
 });
 
-describe("Tasks side panel board", () => {
+describe("Tasks side panel list", () => {
   const BB_PROJECT_ID = "proj_current";
   const linkedProject = {
     id: PROJECT_ID,
@@ -355,7 +355,7 @@ describe("Tasks side panel board", () => {
     };
   }
 
-  it("shows the board of the Tasks project linked to the current bb project", async () => {
+  it("lists tasks of the Tasks project linked to the current bb project", async () => {
     const slot = renderSlot(
       app.threadPanelActions[0]!,
       { threadId: "thr_1", params: null },
@@ -368,17 +368,17 @@ describe("Tasks side panel board", () => {
         openThreadPanel: () => true,
       },
     );
-    fireEvent.click(await slot.findByText("Ship task embeds"));
+    fireEvent.click(await slot.findByRole("button", { name: "Open TSK-4: Ship task embeds" }));
     expect(slot.navigateCalls).toContainEqual({
       method: "openThreadPanel",
       options: { actionId: "task", title: "TSK-4", params: { taskKey: "TSK-4" } },
     });
 
-    fireEvent.click(slot.getByRole("button", { name: "Open Tasks Plugin board in Tasks" }));
+    fireEvent.click(slot.getByRole("button", { name: "Open Tasks Plugin in Tasks" }));
     expect(slot.navigateCalls).toContainEqual({
       method: "toPluginPanel",
       path: "tasks",
-      options: { subPath: `${PROJECT_ID}?view=board` },
+      options: { subPath: `${PROJECT_ID}?view=list` },
     });
   });
 

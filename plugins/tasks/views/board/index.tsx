@@ -367,11 +367,9 @@ function BoardSkeleton() {
 
 interface BoardViewProps {
   projectId: string;
-  /** Replaces navigating the Tasks panel to the task, e.g. in a side panel. */
-  onOpenTask?: (task: Task) => void;
 }
 
-export function BoardView({ projectId, onOpenTask }: BoardViewProps) {
+export function BoardView({ projectId }: BoardViewProps) {
   const rpc = useTasksRpc();
   const navigation = useTasksNavigation();
   const board = useTasksQuery<BoardData>(
@@ -545,8 +543,7 @@ export function BoardView({ projectId, onOpenTask }: BoardViewProps) {
 
   const openTask = (task: Task) => {
     if (suppressClickRef.current) return;
-    if (onOpenTask) onOpenTask(task);
-    else navigation.go({ kind: "task", taskKey: task.key });
+    navigation.go({ kind: "task", taskKey: task.key });
   };
 
   if (columns === undefined) {

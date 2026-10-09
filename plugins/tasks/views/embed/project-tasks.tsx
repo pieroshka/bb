@@ -11,17 +11,11 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "../../components/empty-state.js";
-import type { Task } from "../../shared/contract.js";
 import { useProjects } from "../../shell/data.js";
 import { PANEL_PATH, tasksRouteToSubPath } from "../../shell/routes.js";
-import { BoardView } from "../board/index.js";
+import { ListView } from "../list/index.js";
 
-/**
- * The board of the Tasks project linked to the current bb project, for the
- * thread side panel. Cards open in a sibling side-panel tab so the thread
- * stays in view.
- */
-export function ProjectBoardPanel() {
+export function ProjectTasksPanel() {
   const { projectId: bbProjectId } = useBbContext();
   const navigate = useBbNavigate();
   const projects = useProjects();
@@ -58,7 +52,7 @@ export function ProjectBoardPanel() {
       <EmptyState
         icon="ListTodo"
         title="No Tasks project for this project"
-        description="Link a Tasks project to this bb project to see its board here."
+        description="Link a Tasks project to this bb project to see its tasks here."
         action={
           <Button variant="outline" size="sm" onClick={() => openTasks("manage")}>
             Manage projects
@@ -68,18 +62,18 @@ export function ProjectBoardPanel() {
     );
   }
 
-  const openTask = (task: Task) => {
+  const openTask = (taskKey: string) => {
     const opened = navigate.openThreadPanel({
       actionId: "task",
-      title: task.key,
-      params: { taskKey: task.key },
+      title: taskKey,
+      params: { taskKey },
     });
-    if (!opened) openTasks(tasksRouteToSubPath({ kind: "task", taskKey: task.key }));
+    if (!opened) openTasks(tasksRouteToSubPath({ kind: "task", taskKey }));
   };
-  const boardSubPath = tasksRouteToSubPath({
+  const listSubPath = tasksRouteToSubPath({
     kind: "project",
     projectId: project.id,
-    view: "board",
+    view: "list",
   });
 
   return (
@@ -107,14 +101,14 @@ export function ProjectBoardPanel() {
           className="size-8 shrink-0"
           size="icon"
           variant="ghost"
-          aria-label={`Open ${project.name} board in Tasks`}
-          onClick={() => openTasks(boardSubPath)}
+          aria-label={`Open ${project.name} in Tasks`}
+          onClick={() => openTasks(listSubPath)}
         >
           <Icon name="ArrowUpRight" className="size-4" />
         </Button>
       </div>
       <div className="min-h-0 flex-1">
-        <BoardView projectId={project.id} onOpenTask={openTask} />
+        <ListView projectId={project.id} onOpenTask={openTask} />
       </div>
     </div>
   );

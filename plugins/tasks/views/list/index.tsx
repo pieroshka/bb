@@ -46,6 +46,7 @@ const NO_LABELS: readonly Label[] = [];
 interface ListViewProps {
   projectId: string | null;
   activeOnly?: boolean;
+  onOpenTask?: (taskKey: string) => void;
 }
 
 function LoadingRows() {
@@ -69,12 +70,19 @@ function LoadingRows() {
   );
 }
 
-export function ListView({ projectId, activeOnly = false }: ListViewProps) {
+export function ListView({
+  projectId,
+  activeOnly = false,
+  onOpenTask,
+}: ListViewProps) {
   const navigation = useTasksNavigation();
   const rpc = useTasksRpc();
   const openTask = useCallback(
-    (taskKey: string) => navigation.go({ kind: "task", taskKey }),
-    [navigation],
+    (taskKey: string) =>
+      onOpenTask
+        ? onOpenTask(taskKey)
+        : navigation.go({ kind: "task", taskKey }),
+    [navigation, onOpenTask],
   );
   const projects = useProjects();
   const { toasts, push, dismiss } = useDetailToasts();
